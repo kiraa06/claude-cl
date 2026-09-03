@@ -9,6 +9,7 @@ import (
 	"github.com/kiraa06/claude-cl/internal/group"
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
+	"github.com/kiraa06/claude-cl/internal/tool"
 )
 
 // allCap bounds the global section; the rest stay reachable through search.
@@ -19,6 +20,7 @@ type Choice struct {
 	Mode    launch.Mode
 	Session scan.Session
 	Model   string
+	Tool    string
 }
 
 // rowKind distinguishes the flattened list's entries.
@@ -53,6 +55,9 @@ type Model struct {
 	cwd       string
 	repoRoot  string
 	claudeDir string
+	home      string
+	tool      string
+	tools     []string // detected tool names; switcher hidden unless len>=2
 
 	rows   []row
 	cursor int
@@ -70,6 +75,7 @@ type Model struct {
 	showPreview bool
 	confirming  bool
 	status      string
+	theme       string // "dark" or "light"
 
 	width, height int
 
@@ -87,9 +93,11 @@ func New(sessions []scan.Session, cwd, claudeDir string, models []string) Model 
 		claudeDir:   claudeDir,
 		models:      models,
 		showPreview: true,
+		theme:       loadTheme(),
 		width:       100,
 		height:      30,
 	}
+	applyTheme(m.theme)
 	m.rebuild()
 	m.syncModelToCursor()
 	return m
@@ -198,6 +206,10 @@ func (m *Model) syncModelToCursor() {
 		m.modelIdx = 0 // a new session uses the configured default
 		return
 	}
+	if i := launch.IndexOf(m.models, r.session.Model); i >= 0 {
+		m.modelIdx = i
+		return
+	}
 	if alias := launch.Alias(r.session.Model); alias != "" {
 		if i := launch.IndexOf(m.models, alias); i >= 0 {
 			m.modelIdx = i
@@ -266,7 +278,7 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok || r.kind != rowSession {
 			return m, nil
 		}
-		dest, err := scan.Trash(m.claudeDir, r.session)
+		dest, err := scan.Trash(m.storeDir(), r.session)
 		if err != nil {
 			m.status = "could not delete: " + err.Error()
 			return m, nil
@@ -359,6 +371,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching, m.status = true, ""
 	case "p":
 		m.showPreview = !m.showPreview
+	case "t":
+		if len(m.tools) >= 2 {
+			m.cycleTool()
+		}
+	case "T":
+		m.cycleTheme()
 	case "enter":
 		return m.launch(launch.Resume)
 	case "f":
@@ -399,7 +417,7 @@ func (m Model) launch(mode launch.Mode) (tea.Model, tea.Cmd) {
 		m.status = "directory gone — " + group.Abbreviate(r.session.Cwd)
 		return m, nil
 	}
-	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel()}
+	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel(), Tool: m.currentTool()}
 	return m, tea.Quit
 }
 
@@ -422,4 +440,67 @@ func (m *Model) SetQuery(q string) {
 	m.searching = true
 	m.rebuild()
 	m.syncModelToCursor()
+}
+
+// AttachTools wires detected backends. The switcher stays hidden unless at
+// least two tools are present.
+func (m *Model) AttachTools(home, current string, names []string) {
+	m.home = home
+	m.tool = current
+	m.tools = names
+}
+
+func (m Model) currentTool() string {
+	if m.tool != "" {
+		return m.tool
+	}
+	return tool.Claude
+}
+
+func (m Model) storeDir() string {
+	if m.home != "" {
+		return tool.StoreDir(m.currentTool(), m.home)
+	}
+	return m.claudeDir
+}
+
+func (m *Model) cycleTool() {
+	next := tool.Next(detectedFromNames(m.tools), m.currentTool())
+	if next == m.currentTool() {
+		return
+	}
+	m.tool = next
+	if sessions, err := tool.List(next, m.home); err == nil {
+		m.sessions = sessions
+	} else {
+		m.sessions = nil
+	}
+	m.models = tool.Models(next, m.home)
+	m.modelIdx = 0
+	m.modelPinned = false
+	m.cursor = 0
+	m.offset = 0
+	m.query = ""
+	m.searching = false
+	tool.SavePreferred(next)
+	m.rebuild()
+	m.syncModelToCursor()
+}
+
+func (m *Model) cycleTheme() {
+	if m.theme == themeLight {
+		m.theme = themeDark
+	} else {
+		m.theme = themeLight
+	}
+	applyTheme(m.theme)
+	saveTheme(m.theme)
+}
+
+func detectedFromNames(names []string) []tool.Detected {
+	out := make([]tool.Detected, 0, len(names))
+	for _, n := range names {
+		out = append(out, tool.Detected{Kind: n})
+	}
+	return out
 }

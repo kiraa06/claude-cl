@@ -46,6 +46,12 @@ func configuredModel(path string) string {
 // selects its current generation. Unrecognised ids return "", leaving the
 // user's configured default in charge rather than guessing.
 func Alias(modelID string) string {
+	if modelID == "" {
+		return ""
+	}
+	if strings.HasPrefix(modelID, "grok") {
+		return modelID
+	}
 	id := strings.TrimPrefix(modelID, "claude-")
 	for _, f := range Families {
 		if strings.HasPrefix(id, f) {

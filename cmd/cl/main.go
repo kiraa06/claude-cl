@@ -16,7 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/kiraa06/claude-cl/internal/launch"
-	"github.com/kiraa06/claude-cl/internal/scan"
+	"github.com/kiraa06/claude-cl/internal/tool"
 	"github.com/kiraa06/claude-cl/internal/ui"
 )
 
@@ -41,13 +41,17 @@ usage:
   cl [query]      pick a session; a query opens the picker filtered
   cl --version    print the version
   cl --help       print this help
+  cl --claude|--grok|--codex
+                  force which agent the picker talks to (otherwise last used)
 
 keys:
   ↑↓ / jk   move            ⏎   start or resume
   pgup/pgdn page            f   fork into a new session
   ←→ / hl   choose model    d   delete (moves to trash)
   /         search          y   copy session id
-  p         preview         q   quit
+  p         preview         t   cycle claude / grok / codex
+  T         theme dark/light
+  q         quit
 `
 
 func main() {
@@ -58,7 +62,7 @@ func main() {
 }
 
 func run() error {
-	query, action := parseArgs(os.Args[1:])
+	query, action, toolFlag := parseArgs(os.Args[1:])
 	switch action {
 	case actionHelp:
 		fmt.Print(usage)
@@ -68,11 +72,9 @@ func run() error {
 		return nil
 	}
 
-	// Resolve claude before scanning: with no claude to launch there is
-	// nothing the picker could usefully do.
-	bin, err := launch.Binary()
-	if err != nil {
-		return err
+	detected := tool.Detect()
+	if len(detected) == 0 {
+		return fmt.Errorf("claude, grok, or codex not found on PATH")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -83,14 +85,28 @@ func run() error {
 		return err
 	}
 
-	claudeDir := filepath.Join(home, ".claude")
-	sessions, err := scan.All(filepath.Join(claudeDir, "projects"))
+	kind := tool.LoadPreferred()
+	if env := os.Getenv("CL_TOOL"); env != "" {
+		kind = env
+	}
+	if toolFlag != "" {
+		kind = toolFlag
+	}
+	if tool.Binary(detected, kind) == "" {
+		kind = detected[0].Kind
+	}
+
+	sessions, err := tool.List(kind, home)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	models, _ := launch.Models(filepath.Join(claudeDir, "settings.json"))
-	model := ui.New(sessions, cwd, claudeDir, models)
+	names := make([]string, len(detected))
+	for i, d := range detected {
+		names[i] = d.Kind
+	}
+	model := ui.New(sessions, cwd, filepath.Join(home, ".claude"), tool.Models(kind, home))
+	model.AttachTools(home, kind, names)
 	if query != "" {
 		model.SetQuery(query)
 	}
@@ -104,7 +120,15 @@ func run() error {
 	if choice == nil {
 		return nil // the user quit
 	}
-	spec := launch.Build(bin, choice.Mode, choice.Session.ID, choice.Session.Cwd, cwd, choice.Model)
+	kind = choice.Tool
+	if kind == "" {
+		kind = tool.Claude
+	}
+	bin := tool.Binary(detected, kind)
+	if bin == "" {
+		return fmt.Errorf("%s not found on PATH", kind)
+	}
+	spec := launch.BuildFor(kind, bin, choice.Mode, choice.Session.ID, choice.Session.Cwd, cwd, choice.Model)
 	return launch.Exec(spec)
 }
 
@@ -135,20 +159,26 @@ const (
 
 // parseArgs interprets the command line. Anything that is not a recognised
 // flag is treated as a search query.
-func parseArgs(args []string) (query string, a action) {
+func parseArgs(args []string) (query string, a action, toolKind string) {
 	var terms []string
 	for _, arg := range args {
 		switch arg {
 		case "-h", "--help", "help":
-			return "", actionHelp
+			return "", actionHelp, ""
 		case "-v", "--version", "version":
-			return "", actionVersion
+			return "", actionVersion, ""
+		case "--claude":
+			toolKind = tool.Claude
+		case "--grok":
+			toolKind = tool.Grok
+		case "--codex":
+			toolKind = tool.Codex
 		default:
 			terms = append(terms, arg)
 		}
 	}
 	if len(terms) == 0 {
-		return "", actionPick
+		return "", actionPick, toolKind
 	}
-	return strings.Join(terms, " "), actionPick
+	return strings.Join(terms, " "), actionPick, toolKind
 }

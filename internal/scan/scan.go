@@ -59,6 +59,7 @@ type Session struct {
 	ContinuedIn string // session this one was continued in, if any
 	Clone       bool   // Claude marked this as a branch/clone
 	Missing     bool   // working directory no longer exists
+	Tool        string // "claude", "grok", or "codex"; empty means claude
 }
 
 // Discover returns the transcript paths of real sessions under root.
@@ -202,6 +203,7 @@ func one(path string) (Session, bool) {
 		ParentID:    m.ForkedFrom,
 		ContinuedIn: m.ContinuedIn,
 		Clone:       hasCloneMark(m.AITitle) || hasCloneMark(m.AgentName),
+		Tool:        "claude",
 	}
 	return s, true
 }

@@ -30,26 +30,41 @@ const (
 	minPreviewAt = 104 // terminal width below which the preview is hidden
 	ageColumn    = 5
 	modelColumn  = 8
+	pathColumn   = 24
 	titleLines   = 2 // word-wrap budget for a session title
 )
 
-// listHeight is how many rows fit, given the fixed chrome above and below.
+func (m Model) footerLines() int {
+	return strings.Count(m.renderFooter(), "\n") + 1
+}
+
+// listHeight is how many list rows fit inside the bordered pane.
 func (m Model) listHeight() int {
-	chrome := 6 // title line, blank, model row, hint row, and padding
-	if m.searching || m.status != "" || m.confirming {
-		chrome++
-	}
+	// pane border (2) + pane title + column header + rule
+	chrome := m.footerLines() + 5
 	if h := m.height - chrome; h > 3 {
 		return h
 	}
 	return 3
 }
 
-func (m Model) listWidth() int {
-	if m.showPreview && m.width >= minPreviewAt {
-		return m.width - previewWidth - 3
+func (m Model) paneSizes() (listOuter, prevOuter int, showPrev bool) {
+	w := max(m.width, 1)
+	showPrev = m.showPreview && w >= minPreviewAt
+	if !showPrev {
+		return w, 0, false
 	}
-	return m.width
+	prevOuter = previewWidth
+	listOuter = w - prevOuter
+	if listOuter < 40 {
+		return w, 0, false
+	}
+	return listOuter, prevOuter, true
+}
+
+func (m Model) listWidth() int {
+	listOuter, _, _ := m.paneSizes()
+	return max(listOuter-4, 20) // border (2) + padding (2)
 }
 
 // clampOffset scrolls the window the minimum needed to keep the cursor visible.
@@ -95,31 +110,74 @@ func (m Model) rowVisualHeight(i, width int) int {
 	}
 }
 
-// View renders the picker.
+var paneBorder = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.AdaptiveColor{Light: "248", Dark: "238"})
+
+// View renders the picker as bordered panes that fill the terminal.
 func (m Model) View() string {
-	listWidth := m.width
-	preview := m.showPreview && m.width >= minPreviewAt
-	if preview {
-		listWidth = m.width - previewWidth - 3
+	applyTheme(m.theme)
+	w, h := max(m.width, 1), max(m.height, 1)
+	footer := clipLines(m.renderFooter(), w)
+	fh := strings.Count(footer, "\n") + 1
+	paneH := h - fh
+	if paneH < 1 {
+		paneH = 1
 	}
 
+	listOuter, prevOuter, showPrev := m.paneSizes()
+	list := m.renderListPane(listOuter, paneH)
+	var body string
+	if !showPrev {
+		body = list
+	} else {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, list, m.renderPreviewPane(prevOuter, paneH))
+	}
+	placeOpts := []lipgloss.WhitespaceOption{}
+	if m.theme == themeLight {
+		placeOpts = append(placeOpts, lipgloss.WithWhitespaceBackground(canvasBg))
+	}
+	body = lipgloss.Place(w, paneH, lipgloss.Left, lipgloss.Top, body, placeOpts...)
+	out := body + "\n" + footer
+	if m.theme == themeLight {
+		return canvas.Width(w).MaxWidth(w).MaxHeight(h).Render(out)
+	}
+	return out
+}
+
+func framePane(content string, outerW, outerH int) string {
+	innerW := max(outerW-4, 1) // border + horizontal padding
+	innerH := max(outerH-2, 1) // border
+	clipped := lipgloss.NewStyle().
+		Width(innerW).MaxWidth(innerW).
+		MaxHeight(innerH).
+		Render(content)
+	return paneBorder.
+		Width(innerW).MaxWidth(outerW).
+		Height(innerH).MaxHeight(outerH).
+		Padding(0, 1).
+		Render(clipped)
+}
+
+func (m Model) renderListPane(outerW, outerH int) string {
+	innerW := max(outerW-4, 20)
 	var b strings.Builder
-	b.WriteString(m.renderTitleBar(listWidth))
-	b.WriteString("\n\n")
-	b.WriteString(m.renderList(listWidth))
+	b.WriteString(m.renderTitleBar(innerW))
+	b.WriteByte('\n')
+	b.WriteString(m.renderColumnHeader(innerW))
+	b.WriteByte('\n')
+	b.WriteString(faint.Render(strings.Repeat("─", max(innerW, 8))))
+	b.WriteByte('\n')
+	b.WriteString(m.renderList(innerW))
+	return framePane(b.String(), outerW, outerH)
+}
 
-	body := b.String()
-	if preview {
-		body = lipgloss.JoinHorizontal(lipgloss.Top,
-			lipgloss.NewStyle().Width(listWidth).Render(body),
-			lipgloss.NewStyle().Width(previewWidth).MarginLeft(2).Render(m.renderPreview()),
-		)
-	}
-	return body + "\n" + m.renderFooter()
+func (m Model) renderPreviewPane(outerW, outerH int) string {
+	return framePane(m.renderPreview(), outerW, outerH)
 }
 
 func (m Model) renderTitleBar(width int) string {
-	left := accent.Render("cl") + dim.Render(fmt.Sprintf("  %d sessions", len(m.sessions)))
+	left := accent.Render("cl") + dim.Render(fmt.Sprintf("  %d", len(m.sessions)))
 	if m.query != "" {
 		shown := 0
 		for _, r := range m.rows {
@@ -129,7 +187,29 @@ func (m Model) renderTitleBar(width int) string {
 		}
 		left += dim.Render(fmt.Sprintf(" · %d matching", shown))
 	}
+	if len(m.tools) >= 2 {
+		left += dim.Render("  agent ") + accent.Render(m.currentTool())
+	}
+	left += dim.Render("  theme ") + accent.Render(m.themeName())
 	return left
+}
+
+func (m Model) themeName() string {
+	if m.theme == themeLight {
+		return themeLight
+	}
+	return themeDark
+}
+
+func (m Model) renderColumnHeader(width int) string {
+	tw, showPath := m.titleColWidth(width)
+	title := dim.Render(pad("Title", tw))
+	if showPath {
+		title += faint.Render(" │ ") + dim.Render(pad("Path", pathColumn))
+	}
+	title += faint.Render(" │ ") + dim.Render(pad("Age", ageColumn))
+	title += faint.Render(" │ ") + dim.Render(pad("Model", modelColumn))
+	return title
 }
 
 func (m Model) renderList(width int) string {
@@ -172,65 +252,59 @@ func (m Model) renderRow(i, width int) string {
 	case rowNote:
 		return faint.Render("    " + r.text)
 	case rowNew:
-		return m.renderNewRow(i)
+		return m.renderNewRow(i, width)
 	default:
 		return m.renderSessionRow(i, width)
 	}
 }
 
-func (m Model) renderNewRow(i int) string {
+func (m Model) renderNewRow(i, width int) string {
+	tw, showPath := m.titleColWidth(width)
 	if i == m.cursor {
-		return marker.Render("  ▸ ") + selected.Render("New session") +
-			dim.Render("  in this directory")
+		label := marker.Render("  ▸ ") + selected.Render("New session") + dim.Render("  in this directory")
+		return m.joinCols(pad(label, tw), "", "", "", true, showPath)
 	}
-	return "    " + accent.Render("New session")
+	label := fill(4) + accent.Render("New session")
+	return m.joinCols(pad(label, tw), "", "", "", false, showPath)
 }
 
 func (m Model) renderSessionRow(i, width int) string {
 	r := m.rows[i]
 	s := r.session
 	lines := m.sessionTitleLines(i, width)
+	sel := i == m.cursor
 
-	meta := fmt.Sprintf("%*s %-*s", ageColumn, age(s.Modified), modelColumn, shortModel(s.Model))
 	var path string
 	if r.section != group.KindCwd {
 		path = group.Abbreviate(s.Cwd)
 	}
+	ageCell := age(s.Modified)
+	if s.Missing {
+		ageCell = "gone"
+	}
+	modelCell := shortModel(s.Model)
 
 	cursor, tree := m.sessionPrefix(i)
-	name := pad(lines[0], m.titleWidth(i, width))
-	painted := m.paintTitle(name, i == m.cursor, r.context)
-	var line string
-	if i == m.cursor {
-		line = marker.Render(cursor) + faint.Render(tree) + painted
-	} else {
-		line = cursor + faint.Render(tree) + painted
-	}
-
+	tw, showPath := m.titleColWidth(width)
+	inner := max(tw-lipgloss.Width(cursor+tree), 8)
+	painted := m.paintTitle(lines[0], sel, r.context)
 	if s.AITitled {
-		line += aiMark.Render(" ·")
+		painted += aiMark.Render(" ·")
+	}
+	name := pad(painted, inner)
+	var title string
+	if sel {
+		title = marker.Render(cursor) + faint.Render(tree) + name
 	} else {
-		line += "  "
+		title = cursor + faint.Render(tree) + name
 	}
-	if s.Missing {
-		line += " " + warn.Render("gone")
-	}
-	if path != "" {
-		line += " " + faint.Render(pad(clip(path, 24), 25))
-	}
-	line += " " + dim.Render(meta)
 
+	line := m.joinCols(title, path, ageCell, modelCell, sel, showPath)
 	if len(lines) == 1 {
 		return line
 	}
-	contPrefix := strings.Repeat(" ", lipgloss.Width(cursor+tree))
-	var b strings.Builder
-	b.WriteString(line)
-	for _, extra := range lines[1:] {
-		b.WriteByte('\n')
-		b.WriteString(contPrefix + m.paintTitle(extra, i == m.cursor, r.context))
-	}
-	return b.String()
+	cont := fill(lipgloss.Width(cursor+tree)) + m.paintTitle(lines[1], sel, r.context)
+	return line + "\n" + m.joinCols(pad(cont, tw), "", "", "", sel, showPath)
 }
 
 func (m Model) sessionPrefix(i int) (cursor, tree string) {
@@ -238,7 +312,7 @@ func (m Model) sessionPrefix(i int) (cursor, tree string) {
 	if i == m.cursor {
 		cursor = "  ▸ "
 	} else {
-		cursor = "    "
+		cursor = fill(4)
 	}
 	if r.depth <= 0 {
 		return cursor, ""
@@ -255,20 +329,61 @@ func (m Model) sessionPrefix(i int) (cursor, tree string) {
 	return cursor, b.String()
 }
 
-func (m Model) titleWidth(i, width int) int {
-	r := m.rows[i]
-	meta := fmt.Sprintf("%*s %-*s", ageColumn, age(r.session.Modified), modelColumn, shortModel(r.session.Model))
-	cursor, tree := m.sessionPrefix(i)
-	w := width - lipgloss.Width(meta) - lipgloss.Width(cursor+tree) - 2
-	if r.section != group.KindCwd {
-		w -= 26
+func (m Model) titleColWidth(width int) (titleW int, showPath bool) {
+	showPath = width >= 72
+	// joinCols: title + [sep+path] + sep+age + sep+model. Each sep is 3 cells.
+	seps := 2
+	meta := ageColumn + modelColumn
+	if showPath {
+		seps++
+		meta += pathColumn
 	}
-	return max(w, 12)
+	meta += seps * 3
+	titleW = max(width-meta, 12)
+	return titleW, showPath
+}
+
+func (m Model) titleWidth(i, width int) int {
+	tw, _ := m.titleColWidth(width)
+	cursor, tree := m.sessionPrefix(i)
+	inner := max(tw-lipgloss.Width(cursor+tree), 8)
+	if i < len(m.rows) && m.rows[i].session.AITitled {
+		inner = max(inner-2, 8)
+	}
+	return inner
 }
 
 func (m Model) sessionTitleLines(i, width int) []string {
-	tw := m.titleWidth(i, width)
-	return wrapTitle(m.rows[i].session.Title, tw, titleLines)
+	return wrapTitle(m.rows[i].session.Title, m.titleWidth(i, width), titleLines)
+}
+
+func (m Model) joinCols(title, path, ageCell, modelCell string, sel, showPath bool) string {
+	sep := faint.Render(" │ ")
+	if sel && (path != "" || ageCell != "" || modelCell != "") {
+		sep = selected.Render(" │ ")
+	}
+	ageOut := metaCell(ageCell, ageColumn, sel, dim)
+	if ageCell == "gone" {
+		ageOut = warn.Render(pad("gone", ageColumn))
+	}
+	modelOut := metaCell(modelCell, modelColumn, sel, dim)
+	pathOut := metaCell(path, pathColumn, sel, faint)
+	line := title
+	if showPath {
+		line += sep + pathOut
+	}
+	return line + sep + ageOut + sep + modelOut
+}
+
+func metaCell(text string, width int, sel bool, base lipgloss.Style) string {
+	cell := pad(clip(text, width), width)
+	if text == "" {
+		return fill(width)
+	}
+	if sel {
+		return selected.Render(cell)
+	}
+	return base.Render(cell)
 }
 
 func (m Model) parentTitle(id string) string {
@@ -346,7 +461,7 @@ func highlight(text string, terms []string, base, hit lipgloss.Style) string {
 func (m Model) renderPreview() string {
 	r, ok := m.current()
 	if !ok || r.kind != rowSession {
-		return faint.Render("New session\n\nStarts claude in\n" + group.Abbreviate(m.cwd))
+		return faint.Render("New session\n\nStarts " + m.currentTool() + " in\n" + group.Abbreviate(m.cwd))
 	}
 	s := r.session
 
@@ -387,7 +502,7 @@ func (m Model) renderPreview() string {
 	for _, t := range s.Preview {
 		who, style := "you", accent
 		if t.Role == "assistant" {
-			who, style = "claude", aiMark
+			who, style = m.currentTool(), aiMark
 		}
 		b.WriteString(style.Render(who))
 		b.WriteString("\n")
@@ -421,9 +536,12 @@ func (m Model) renderFooter() string {
 		}
 		models = append(models, faint.Render(name))
 	}
-	lines = append(lines, dim.Render("model  ")+strings.Join(models, "  "))
+	lines = append(lines, dim.Render("model  ")+strings.Join(models, fill(2)))
 
-	hints := "↑↓ move · pgup/pgdn · ←→ model · ⏎ start · f fork · y copy id · d delete · / search · p preview · q quit"
+	hints := "↑↓ move · pgup/pgdn · ←→ model · ⏎ start · f fork · y copy id · d delete · / search · p preview · T dark/light · q quit"
+	if len(m.tools) >= 2 {
+		hints = "↑↓ move · ←→ model · ⏎ start · f fork · t " + strings.Join(m.tools, "/") + " · T dark/light · / search · p preview · q quit"
+	}
 	if m.searching {
 		hints = "type to filter · ↑↓ move · ⏎ start · esc clear"
 	}
@@ -490,9 +608,16 @@ func clip(s string, width int) string {
 }
 
 // pad right-pads to a display width.
+func fill(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return canvas.Render(strings.Repeat(" ", n))
+}
+
 func pad(s string, width int) string {
 	if gap := width - lipgloss.Width(s); gap > 0 {
-		return s + strings.Repeat(" ", gap)
+		return s + fill(gap)
 	}
 	return s
 }
@@ -559,6 +684,37 @@ func indent(s, prefix string) string {
 		lines[i] = prefix + l
 	}
 	return strings.Join(lines, "\n")
+}
+
+func clipLines(s string, w int) string {
+	if w < 1 {
+		w = 1
+	}
+	clipper := lipgloss.NewStyle().MaxWidth(w)
+	parts := strings.Split(s, "\n")
+	for i, line := range parts {
+		parts[i] = clipper.Render(line)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// fitHeight keeps s to h lines without MaxWidth-clipping, which would slice
+// box-drawing borders and leave a black strip.
+func fitHeight(s string, h int) string {
+	if h < 1 {
+		h = 1
+	}
+	raw := strings.Split(s, "\n")
+	for len(raw) > 0 && raw[len(raw)-1] == "" {
+		raw = raw[:len(raw)-1]
+	}
+	if len(raw) > h {
+		raw = raw[:h]
+	}
+	for len(raw) < h {
+		raw = append(raw, "")
+	}
+	return strings.Join(raw, "\n")
 }
 
 func plural(n int, word string) string {

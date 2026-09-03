@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
@@ -54,6 +55,8 @@ func testModel(t *testing.T) Model {
 	}
 	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus[1m]", "opus", "sonnet", "haiku", "fable"})
 	m.repoRoot = "/repo" // set directly; the test dirs are not real repositories
+	m.theme = themeDark
+	applyTheme(themeDark)
 	m.rebuild()
 	m.cursor = m.firstSelectable()
 	return m
@@ -335,6 +338,86 @@ func TestEmptyStoreStillOffersNewSession(t *testing.T) {
 	}
 }
 
+func TestAITitleDotStaysInTitleColumn(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "h1", Cwd: "/repo/backend", Title: "short title", AITitled: true,
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "short title") || !strings.Contains(out, "·") {
+		t.Fatalf("missing title or dot:\n%s", out)
+	}
+	// The AI-title mark must not sit in its own gutter before Path.
+	if strings.Contains(out, "· │") || strings.Contains(out, "·│") {
+		t.Errorf("title mark leaked into the Path gutter:\n%s", out)
+	}
+}
+
+func TestColumnHeaderFitsOnOneLine(t *testing.T) {
+	m := testModel(t)
+	m.theme = themeLight
+	applyTheme(themeLight)
+	inner := 80
+	hdr := m.renderColumnHeader(inner)
+	if strings.Contains(hdr, "\n") {
+		t.Fatalf("header wrapped:\n%s", hdr)
+	}
+	if lipgloss.Width(hdr) > inner {
+		t.Errorf("header is %d cells, inner is %d", lipgloss.Width(hdr), inner)
+	}
+}
+
+func TestViewHasColumnHeader(t *testing.T) {
+	m := testModel(t)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "Title") || !strings.Contains(out, "│") {
+		t.Errorf("missing column header:\n%s", out)
+	}
+	if !strings.Contains(out, "Age") || !strings.Contains(out, "Model") {
+		t.Errorf("missing Age/Model columns:\n%s", out)
+	}
+}
+
+func TestToolCycleReloadsSessions(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	home := t.TempDir()
+	dir := filepath.Join(home, ".grok", "sessions", "%2Frepo", "g1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := `{"generated_title":"grok session","info":{"id":"g1","cwd":"/repo"},"updated_at":"2026-09-04T01:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "summary.json"), []byte(sum), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := testModel(t)
+	m.AttachTools(home, "claude", []string{"claude", "grok"})
+	m = press(m, "t")
+	if m.currentTool() != "grok" {
+		t.Errorf("tool = %q, want grok", m.currentTool())
+	}
+	var ids []string
+	for _, r := range m.rows {
+		if r.kind == rowSession {
+			ids = append(ids, r.session.ID)
+		}
+	}
+	if len(ids) != 1 || ids[0] != "g1" {
+		t.Errorf("after cycle, sessions = %v, want g1", ids)
+	}
+}
+
+func TestToolKeyHiddenWithOneBackend(t *testing.T) {
+	m := press(testModel(t), "t")
+	if m.currentTool() != "claude" {
+		t.Errorf("single-tool picker cycled to %q", m.currentTool())
+	}
+}
+
 func TestViewWrapsLongTitle(t *testing.T) {
 	m := New([]scan.Session{{
 		ID: "long", Cwd: "/repo/backend",
@@ -390,13 +473,96 @@ func TestViewNestsForkUnderParent(t *testing.T) {
 }
 
 func TestViewRendersWithoutPanicAtManySizes(t *testing.T) {
-	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}}
+	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}, {60, 12}, {100, 18}}
 	for _, sz := range sizes {
 		m := testModel(t)
 		tm, _ := m.Update(tea.WindowSizeMsg{Width: sz.w, Height: sz.h})
-		if out := tm.(Model).View(); out == "" {
+		out := tm.(Model).View()
+		if out == "" {
 			t.Errorf("empty render at %dx%d", sz.w, sz.h)
+			continue
 		}
+		lines := strings.Split(out, "\n")
+		if len(lines) > sz.h {
+			t.Errorf("%dx%d rendered %d lines", sz.w, sz.h, len(lines))
+		}
+		for i, line := range lines {
+			if lipgloss.Width(line) > sz.w {
+				t.Errorf("%dx%d line %d is %d cells: %q", sz.w, sz.h, i, lipgloss.Width(line), line)
+				break
+			}
+		}
+	}
+}
+
+func TestViewDoesNotOverflowWidth(t *testing.T) {
+	for _, theme := range []string{themeDark, themeLight} {
+		m := testModel(t)
+		m.theme = theme
+		applyTheme(theme)
+		tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+		out := tm.(Model).View()
+		for i, line := range strings.Split(out, "\n") {
+			if lipgloss.Width(line) > 140 {
+				t.Errorf("theme %s line %d is %d cells (want <= 140)", theme, i, lipgloss.Width(line))
+				break
+			}
+		}
+	}
+}
+
+func TestViewReflowsOnResize(t *testing.T) {
+	m := testModel(t)
+	wide, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	wideOut := wide.(Model).View()
+	if !strings.Contains(wideOut, "Path") {
+		t.Fatalf("wide view missing Path column:\n%s", wideOut)
+	}
+	narrow, _ := wide.(Model).Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+	got := narrow.(Model)
+	if got.width != 50 || got.height != 12 {
+		t.Errorf("size = %dx%d after resize", got.width, got.height)
+	}
+	out := got.View()
+	if strings.Count(out, "\n")+1 > 12 {
+		t.Errorf("narrow view is %d lines, want <= 12", strings.Count(out, "\n")+1)
+	}
+}
+
+func TestThemeToggleDarkLight(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	t.Setenv("CL_THEME", "")
+	m := testModel(t)
+	m.theme = themeDark
+	applyTheme(m.theme)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = tm.(Model)
+	if !strings.Contains(m.View(), "theme dark") {
+		t.Fatalf("want theme dark label:\n%s", m.View())
+	}
+	m = press(m, "T")
+	if m.theme != themeLight {
+		t.Errorf("theme = %q, want light", m.theme)
+	}
+	out := m.View()
+	if !strings.Contains(out, "theme light") {
+		t.Errorf("want theme light label:\n%s", out)
+	}
+	if !strings.Contains(out, "T dark/light") {
+		t.Errorf("hint should name dark/light:\n%s", out)
+	}
+}
+
+func TestAgentCycleHintNamesTheAgents(t *testing.T) {
+	m := testModel(t)
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok", "codex"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "t claude/grok/codex") {
+		t.Errorf("hint should name the agents:\n%s", out)
+	}
+	if !strings.Contains(out, "agent") || !strings.Contains(out, "claude") {
+		t.Errorf("pane should label the current agent:\n%s", out)
 	}
 }
 

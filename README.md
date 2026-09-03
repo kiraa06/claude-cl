@@ -18,9 +18,11 @@
 `claude` always starts fresh. `cl` shows you what you were already working on —
 named, grouped by where you are, and one keystroke away.
 
-Every conversation is listed by the title Claude gave it (*"Fix flaky auth
+Every conversation is listed by the title the agent gave it (*"Fix flaky auth
 middleware test"*, not a UUID), with the sessions from your current directory
-first, then the rest of your repo, then everything else.
+first, then the rest of your repo, then everything else. Titles wrap instead of
+clipping. Forks and clones nest under their parent. The list and preview are
+bordered panes that follow the terminal size.
 
 ## Install
 
@@ -50,18 +52,22 @@ Or grab a binary from the [releases page](https://github.com/kiraa06/claude-cl/r
 
 ### Requirements
 
-- [Claude Code](https://claude.com/claude-code) on your `PATH` — `cl` launches it
+- At least one of [Claude Code](https://claude.com/claude-code),
+  [Grok](https://github.com/xai-org/grok-cli), or
+  [Codex](https://github.com/openai/codex) on your `PATH`
 - Go 1.26+ only if you build it yourself
 
 ## Use it
 
 ```sh
-cl              # open the picker
+cl              # open the picker (Claude by default)
 cl kafka        # open it filtered to "kafka"
+cl --grok       # Grok sessions for this run
+cl --codex      # Codex sessions for this run
 ```
 
 Type `cl` where you'd normally type `claude`. The `New session` row is selected
-by default, so `cl` then `⏎` is the same as running `claude`.
+by default, so `cl` then `⏎` is the same as running the current agent.
 
 ### Keys
 
@@ -76,6 +82,8 @@ by default, so `cl` then `⏎` is the same as running `claude`.
 | `d` | **delete** — moves the transcript to the trash, never erases it |
 | `/` | search titles, directories, branches and models |
 | `p` | toggle the preview pane |
+| `t` | cycle **claude / grok / codex** — only when more than one is installed |
+| `T` | theme **dark / light** |
 | `g` / `G` | jump to first / last |
 | `q` / `esc` | quit |
 
@@ -105,6 +113,18 @@ The footer follows the highlighted row, so resuming a Sonnet conversation
 resumes it on Sonnet. `New session` uses the `model` from your
 `~/.claude/settings.json`. Press `←` `→` to override, and it stays put.
 
+### Other tools
+
+If `grok` or `codex` is on your PATH as well, press `t` to cycle
+**claude / grok / codex**. The current agent is labelled in the list pane
+(`agent grok`). The switcher is omitted when only one of those CLIs is
+installed. Default is Claude; the last choice is remembered in
+`~/.config/cl/tool`. You can also pass `--grok` or `--codex` for one run.
+
+`T` switches **dark / light**. Dark is the original foreground-only palette.
+Light paints a white canvas (including every cell) so it stays readable on a
+dark terminal. The choice is stored in `~/.config/cl/theme`.
+
 ### Finds things
 
 <p align="center">
@@ -116,9 +136,10 @@ match, so terms narrow the list like they do in a shell.
 
 ### Deletes safely
 
-`d` asks first, then *moves* the transcript to `~/.claude/.trash-cl/<date>/`
-along with its subagent logs. Nothing is unlinked — these files hold hours of
-conversation and can run to tens of megabytes.
+`d` asks first, then *moves* the transcript to `.<agent>/.trash-cl/<date>/`
+(under `~/.claude`, `~/.grok`, or `~/.codex`) along with its subagent logs.
+Nothing is unlinked — these files hold hours of conversation and can run to
+tens of megabytes.
 
 ## It's fast
 
@@ -131,8 +152,9 @@ of every transcript and screens lines with a byte scan before parsing any JSON.
 
 ## Troubleshooting
 
-**`cl: claude not found on PATH`** — `cl` launches Claude Code, so it needs
-`claude` installed. Check with `which claude`.
+**`cl: claude, grok, or codex not found on PATH`** — `cl` launches one of
+those agents. Install at least one and check with `which claude` (or `grok` /
+`codex`).
 
 **macOS says `killed: 9` when you run `cl`.** Gatekeeper rejects Go's
 linker-signed binaries once they have been downloaded. The install script
@@ -170,8 +192,8 @@ to the directory the conversation was happening in.
 rm ~/.local/bin/cl
 ```
 
-`cl` stores no configuration and never modifies your sessions, except when you
-press `d`.
+`cl` remembers the last agent and theme in `~/.config/cl/` (`tool`, `theme`).
+It never modifies your sessions, except when you press `d`.
 
 ## Contributing
 
