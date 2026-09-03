@@ -1,0 +1,167 @@
+<h1 align="center">cl</h1>
+
+<p align="center">
+  <em>Pick up where you left off in Claude Code.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/kiraa06/claude-cl/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kiraa06/claude-cl/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/kiraa06/claude-cl/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/kiraa06/claude-cl?color=brightgreen"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/macOS%20%7C%20Linux-lightgrey">
+</p>
+
+<p align="center">
+  <img src="docs/demo.svg" alt="cl listing Claude Code sessions grouped by directory, with a preview pane" width="100%">
+</p>
+
+`claude` always starts fresh. `cl` shows you what you were already working on —
+named, grouped by where you are, and one keystroke away.
+
+Every conversation is listed by the title Claude gave it (*"Fix flaky auth
+middleware test"*, not a UUID), with the sessions from your current directory
+first, then the rest of your repo, then everything else.
+
+## Install
+
+**Script** — macOS and Linux, no Go needed:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kiraa06/claude-cl/main/install.sh | sh
+```
+
+Installs to `~/.local/bin`. Set `BINDIR=/usr/local/bin` to change that.
+
+**Go**:
+
+```sh
+go install github.com/kiraa06/claude-cl/cmd/cl@latest
+```
+
+**From source**:
+
+```sh
+git clone https://github.com/kiraa06/claude-cl
+cd claude-cl
+go build -ldflags='-s -w' -o ~/.local/bin/cl ./cmd/cl
+```
+
+Or grab a binary from the [releases page](https://github.com/kiraa06/claude-cl/releases).
+
+### Requirements
+
+- [Claude Code](https://claude.com/claude-code) on your `PATH` — `cl` launches it
+- Go 1.26+ only if you build it yourself
+
+## Use it
+
+```sh
+cl              # open the picker
+cl kafka        # open it filtered to "kafka"
+```
+
+Type `cl` where you'd normally type `claude`. The `New session` row is selected
+by default, so `cl` then `⏎` is the same as running `claude`.
+
+### Keys
+
+| Key | |
+|---|---|
+| `↑` `↓` / `j` `k` | move — section headers are skipped |
+| `←` `→` / `h` `l` / `Tab` | choose the model |
+| `⏎` | start or resume the highlighted row |
+| `f` | **fork** — resume under a new session id, leaving the original untouched |
+| `d` | **delete** — moves the transcript to the trash, never erases it |
+| `/` | search titles, directories, branches and models |
+| `p` | toggle the preview pane |
+| `g` / `G` | jump to first / last |
+| `q` / `esc` | quit |
+
+## What it does
+
+### Groups sessions by how close they are to you
+
+- **HERE** — sessions from the directory you ran `cl` in. Holds `New session`.
+- **REPO** — the rest of the current git repository, including its worktrees.
+  Skipped when you aren't in a repo.
+- **ALL PROJECTS** — everywhere else, newest first.
+
+### Names conversations properly
+
+Claude titles most sessions itself, and those are marked with a `·`. For the
+rest, `cl` uses the opening prompt — skipping over "ok" and "hey" to find the
+prompt that actually says something, and preferring plain English to a pasted
+stack trace. Scheduled runs are titled by their task name.
+
+### Remembers which model a conversation was using
+
+The footer follows the highlighted row, so resuming a Sonnet conversation
+resumes it on Sonnet. `New session` uses the `model` from your
+`~/.claude/settings.json`. Press `←` `→` to override, and it stays put.
+
+### Finds things
+
+<p align="center">
+  <img src="docs/search.svg" alt="Searching for heap narrows 130 sessions to the two that are about heap" width="100%">
+</p>
+
+Search covers titles, directories, branches and models. Every term has to
+match, so terms narrow the list like they do in a shell.
+
+### Deletes safely
+
+`d` asks first, then *moves* the transcript to `~/.claude/.trash-cl/<date>/`
+along with its subagent logs. Nothing is unlinked — these files hold hours of
+conversation and can run to tens of megabytes.
+
+## It's fast
+
+Transcripts get big: on the machine this was built on, 149 sessions came to
+277MB, the largest single file 63MB. Reading all of that to draw a list would
+take a quarter of a second, so `cl` doesn't. It reads a 64KB window at each end
+of every transcript and screens lines with a byte scan before parsing any JSON.
+
+**The whole store is read in about 40ms**, with no cache to fall out of date.
+
+## Troubleshooting
+
+**`cl: claude not found on PATH`** — `cl` launches Claude Code, so it needs
+`claude` installed. Check with `which claude`.
+
+**`command not found: cl` after installing** — `~/.local/bin` isn't on your
+`PATH`:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && exec zsh
+```
+
+**A session I remember isn't listed.** `cl` hides sessions with no human turn
+and sessions whose working directory can't be resolved, because neither can be
+resumed. It also caps ALL PROJECTS — press `/` to search the rest.
+
+**The preview pane is missing.** It hides itself below ~104 columns. Widen the
+window, or press `p`.
+
+**Resuming moved me to another directory.** By design. Claude Code can find a
+session from anywhere, but running it elsewhere would use the wrong
+`CLAUDE.md`, the wrong relative paths and the wrong repo — so `cl` returns you
+to the directory the conversation was happening in.
+
+## Uninstall
+
+```sh
+rm ~/.local/bin/cl
+```
+
+`cl` stores no configuration and never modifies your sessions, except when you
+press `d`.
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+The design and the measurements behind it are written up in
+[`docs/DESIGN.md`](docs/DESIGN.md).
+
+## License
+
+[MIT](LICENSE)

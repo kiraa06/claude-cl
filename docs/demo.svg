@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1057" height="489" viewBox="0 0 1057 489" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5">
+<rect width="1057" height="489" rx="10" fill="#0d1117"/>
+<path d="M0 10a10 10 0 0 1 10-10h1037a10 10 0 0 1 10 10v22H0z" fill="#161b22"/>
+<circle cx="20" cy="16" r="5.5" fill="#ff5f56"/>
+<circle cx="38" cy="16" r="5.5" fill="#ffbd2e"/>
+<circle cx="56" cy="16" r="5.5" fill="#27c93f"/>
+<text x="528.5" y="20.5" fill="#8b949e" font-size="11.5" text-anchor="middle">cl — ~/code/acme-api</text>
+<text x="18.0" y="46.0" fill="#5fff87" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cl</text>
+<text x="33.6" y="46.0" fill="#767676" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  15 sessions</text>
+<text x="712.2" y="46.0" fill="#5fafd7" font-weight="600" textLength="234.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Fix flaky auth middleware test</text>
+<text x="712.2" y="63.0" fill="#4e4e4e" textLength="117.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-api</text>
+<text x="829.2" y="63.0" fill="#4e4e4e" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  main</text>
+<text x="18.0" y="80.0" fill="#5fafd7" font-weight="600" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">HERE  ~/code/acme-api</text>
+<text x="712.2" y="80.0" fill="#767676" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Thu 3 Sep 19:33  opus</text>
+<text x="49.2" y="97.0" fill="#5fff87" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">New session</text>
+<text x="18.0" y="114.0" fill="#5fff87" font-weight="600" textLength="31.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▸ </text>
+<text x="49.2" y="114.0" fill="#ffffff" font-weight="600" textLength="507.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Fix flaky auth middleware test                                   </text>
+<text x="556.2" y="114.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="579.6" y="114.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  15m opus    </text>
+<text x="712.2" y="114.0" fill="#5fff87" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">you</text>
+<text x="49.2" y="131.0" fill="#d0d0d0" textLength="507.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Add pagination to the /orders endpoint                           </text>
+<text x="556.2" y="131.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="579.6" y="131.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2h sonnet  </text>
+<text x="712.2" y="131.0" fill="#767676" textLength="327.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  the auth middleware test fails about one</text>
+<text x="49.2" y="148.0" fill="#d0d0d0" textLength="507.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">why is our docker image 1.2gb                                    </text>
+<text x="579.6" y="148.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2d sonnet  </text>
+<text x="712.2" y="148.0" fill="#767676" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  run in five</text>
+<text x="18.0" y="182.0" fill="#5fafd7" font-weight="600" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">REPO  elsewhere in this repo</text>
+<text x="712.2" y="182.0" fill="#af87ff" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">claude</text>
+<text x="49.2" y="199.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Dark mode flicker on first paint       </text>
+<text x="353.4" y="199.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="199.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-api/web      </text>
+<text x="579.6" y="199.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1h opus    </text>
+<text x="712.2" y="199.0" fill="#767676" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  It&#x27;s a shared clock: the token TTL is</text>
+<text x="49.2" y="216.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Chart legend overlaps on narrow screens</text>
+<text x="353.4" y="216.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="216.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-api/web      </text>
+<text x="579.6" y="216.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   3d sonnet  </text>
+<text x="712.2" y="216.0" fill="#767676" textLength="327.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  computed once at package init, so a test</text>
+<text x="49.2" y="233.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Retry backoff for the webhook queue    </text>
+<text x="353.4" y="233.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="233.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-api/worker   </text>
+<text x="579.6" y="233.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   5d opus    </text>
+<text x="712.2" y="233.0" fill="#767676" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  that runs more t…</text>
+<text x="18.0" y="267.0" fill="#5fafd7" font-weight="600" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ALL PROJECTS</text>
+<text x="712.2" y="267.0" fill="#5fff87" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">you</text>
+<text x="49.2" y="284.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Terraform plan wants to replace the RD…</text>
+<text x="353.4" y="284.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="284.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/infra             </text>
+<text x="579.6" y="284.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1h opus    </text>
+<text x="712.2" y="284.0" fill="#767676" textLength="280.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  do that, and add a test that fails</text>
+<text x="49.2" y="301.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">scheduled: nightly-cost-report         </text>
+<text x="376.8" y="301.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/infra             </text>
+<text x="579.6" y="301.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  12h haiku   </text>
+<text x="712.2" y="301.0" fill="#767676" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  without the fix</text>
+<text x="49.2" y="318.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Make zsh startup faster                </text>
+<text x="353.4" y="318.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="318.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/dotfiles          </text>
+<text x="579.6" y="318.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   4d haiku   </text>
+<text x="49.2" y="335.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Draft a post about cursor pagination   </text>
+<text x="353.4" y="335.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="335.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/blog              </text>
+<text x="579.6" y="335.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   6d opus    </text>
+<text x="712.2" y="335.0" fill="#af87ff" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">claude</text>
+<text x="49.2" y="352.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Compare JSON parsers for a 40MB file   </text>
+<text x="353.4" y="352.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="352.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/scratch           </text>
+<text x="579.6" y="352.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1w sonnet  </text>
+<text x="712.2" y="352.0" fill="#767676" textLength="296.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Done — `auth.Middleware` now takes a</text>
+<text x="49.2" y="369.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Ship completions for zsh and fish      </text>
+<text x="353.4" y="369.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="369.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-cli          </text>
+<text x="579.6" y="369.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1w sonnet  </text>
+<text x="712.2" y="369.0" fill="#767676" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  `Clock`, the test advances it</text>
+<text x="49.2" y="386.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Reduce heap allocations in the parser  </text>
+<text x="353.4" y="386.0" fill="#af87ff" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ·</text>
+<text x="376.8" y="386.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/acme-cli          </text>
+<text x="579.6" y="386.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2w opus    </text>
+<text x="712.2" y="386.0" fill="#767676" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  explicitly, and reverting th…</text>
+<text x="49.2" y="403.0" fill="#d0d0d0" textLength="304.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Summarise the on-call handover         </text>
+<text x="376.8" y="403.0" fill="#4e4e4e" textLength="195.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/code/notes             </text>
+<text x="579.6" y="403.0" fill="#767676" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   3w haiku   </text>
+<text x="18.0" y="420.0" fill="#4e4e4e" textLength="78.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ↓ 1 more</text>
+<text x="18.0" y="437.0" fill="#767676" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">model  </text>
+<text x="72.6" y="437.0" fill="#5fff87" font-weight="600" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ </text>
+<text x="88.2" y="437.0" fill="#ffffff" font-weight="600" textLength="31.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">opus</text>
+<text x="119.4" y="437.0" fill="#5fff87" font-weight="600" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ›</text>
+<text x="150.6" y="437.0" fill="#4e4e4e" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sonnet</text>
+<text x="213.0" y="437.0" fill="#4e4e4e" textLength="39.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">haiku</text>
+<text x="267.6" y="437.0" fill="#4e4e4e" textLength="39.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">fable</text>
+<text x="18.0" y="454.0" fill="#4e4e4e" textLength="624.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↑↓ move · ←→ model · ⏎ start · f fork · d delete · / search · p preview · q quit</text>
+</svg>
