@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,8 +19,20 @@ import (
 	"github.com/kiraa06/claude-cl/internal/ui"
 )
 
-// version is set at build time by the release pipeline.
-var version = "dev"
+// version is stamped by the release pipeline. When it is not — someone ran
+// `go install`, or built from a checkout — the module version Go embeds in the
+// binary is the honest answer.
+var version = ""
+
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 const usage = `cl — pick a Claude Code session
 
@@ -49,7 +62,7 @@ func run() error {
 		fmt.Print(usage)
 		return nil
 	case actionVersion:
-		fmt.Printf("cl %s\n", version)
+		fmt.Printf("cl %s\n", buildVersion())
 		return nil
 	}
 
