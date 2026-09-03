@@ -60,6 +60,19 @@ func TestFilterDoesNotMatchAcrossThePath(t *testing.T) {
 	}
 }
 
+func TestWithAncestorsKeepsParentOfMatch(t *testing.T) {
+	all := []Session{
+		{ID: "child", Title: "forked kafka work", ParentID: "parent"},
+		{ID: "parent", Title: "original chat"},
+		{ID: "other", Title: "unrelated"},
+	}
+	matched := Filter(all, "forked")
+	got := ids(WithAncestors(all, matched))
+	if len(got) != 2 || got[0] != "child" || got[1] != "parent" {
+		t.Errorf("WithAncestors = %v, want child then parent (original order)", got)
+	}
+}
+
 func TestLocalSubsequenceRejectsScatteredLetters(t *testing.T) {
 	if localSubsequence("add webhook retry and a pile of other words", "heap") {
 		t.Error("matched letters scattered over a long span")

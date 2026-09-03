@@ -12,23 +12,35 @@ import (
 
 // Meta is the raw result of reading a transcript's windows.
 type Meta struct {
-	Title   string // best human prompt, cleaned
-	AITitle string // Claude's own ai-title record, if any
-	Cwd     string
-	Branch  string
-	Model   string
-	Preview []Turn
+	Title        string // best human prompt, cleaned
+	AITitle      string // Claude's own ai-title record, if any
+	Cwd          string
+	Branch       string
+	Model        string
+	Preview      []Turn
+	ForkedFrom   string // parent session id, when this transcript was forked
+	CustomTitle  string // user-renamed title, if any
+	AgentName    string // Claude's branch/clone label
+	ContinuedIn  string // session this one was continued in
+	RelocatedCwd string // cwd after a move, newer than the recorded cwd
 }
 
 // record is the subset of a transcript line the picker cares about.
 type record struct {
-	Type      string `json:"type"`
-	AITitle   string `json:"aiTitle"`
-	Cwd       string `json:"cwd"`
-	GitBranch string `json:"gitBranch"`
-	Origin    struct {
+	Type         string `json:"type"`
+	AITitle      string `json:"aiTitle"`
+	CustomTitle  string `json:"customTitle"`
+	AgentName    string `json:"agentName"`
+	Cwd          string `json:"cwd"`
+	GitBranch    string `json:"gitBranch"`
+	RelocatedCwd string `json:"relocatedCwd"`
+	ContinuedIn  string `json:"continuedInSessionId"`
+	Origin       struct {
 		Kind string `json:"kind"`
 	} `json:"origin"`
+	ForkedFrom struct {
+		SessionID string `json:"sessionId"`
+	} `json:"forkedFrom"`
 	Message struct {
 		Role    string          `json:"role"`
 		Model   string          `json:"model"`
@@ -44,7 +56,15 @@ var (
 	markUser      = []byte(`"type":"user"`)
 	markHuman     = []byte(`"kind":"human"`)
 	markCwd       = []byte(`"cwd":"`)
+	markForked    = []byte(`"forkedFrom"`)
+	markCustom    = []byte(`"type":"custom-title"`)
+	markAgent     = []byte(`"type":"agent-name"`)
+	markRelocated = []byte(`"type":"relocated"`)
+	markContinued = []byte(`"type":"continued-in"`)
 )
+
+// cloneMark is the character Claude appends to cloned/branched session names.
+const cloneMark = '\u2442'
 
 // Parse extracts display metadata from a transcript's head and tail windows.
 // tail may be nil, meaning head holds the whole file.
@@ -68,6 +88,11 @@ func Parse(head, tail []byte) Meta {
 				}
 			}
 		}
+		if m.ForkedFrom == "" && bytes.Contains(line, markForked) {
+			if r, ok := decode(line); ok && r.ForkedFrom.SessionID != "" {
+				m.ForkedFrom = r.ForkedFrom.SessionID
+			}
+		}
 	})
 	m.Title = bestTitle(candidates)
 
@@ -81,6 +106,22 @@ func Parse(head, tail []byte) Meta {
 		case bytes.Contains(line, markAITitle):
 			if r, ok := decode(line); ok && r.AITitle != "" {
 				m.AITitle = r.AITitle // keep the last, it is the freshest
+			}
+		case bytes.Contains(line, markCustom):
+			if r, ok := decode(line); ok && r.CustomTitle != "" {
+				m.CustomTitle = r.CustomTitle
+			}
+		case bytes.Contains(line, markAgent):
+			if r, ok := decode(line); ok && r.AgentName != "" {
+				m.AgentName = r.AgentName
+			}
+		case bytes.Contains(line, markRelocated):
+			if r, ok := decode(line); ok && r.RelocatedCwd != "" {
+				m.RelocatedCwd = r.RelocatedCwd
+			}
+		case bytes.Contains(line, markContinued):
+			if r, ok := decode(line); ok && r.ContinuedIn != "" {
+				m.ContinuedIn = r.ContinuedIn
 			}
 		case bytes.Contains(line, markAssistant):
 			if r, ok := decode(line); ok && r.Type == "assistant" {
@@ -261,6 +302,22 @@ func CleanTitle(s string) string {
 	}, s)
 	s = strings.Join(strings.Fields(s), " ")
 	return truncate(s, titleMaxLen)
+}
+
+// stripCloneMark removes the trailing branch marker Claude adds to clones.
+func stripCloneMark(s string) string {
+	return strings.TrimSpace(strings.TrimRightFunc(s, func(r rune) bool {
+		return r == cloneMark || unicode.IsSpace(r)
+	}))
+}
+
+func hasCloneMark(s string) bool {
+	for _, r := range s {
+		if r == cloneMark {
+			return true
+		}
+	}
+	return false
 }
 
 func truncate(s string, max int) string {

@@ -30,6 +30,7 @@ const (
 	minPreviewAt = 104 // terminal width below which the preview is hidden
 	ageColumn    = 5
 	modelColumn  = 8
+	titleLines   = 2 // word-wrap budget for a session title
 )
 
 // listHeight is how many rows fit, given the fixed chrome above and below.
@@ -44,20 +45,53 @@ func (m Model) listHeight() int {
 	return 3
 }
 
+func (m Model) listWidth() int {
+	if m.showPreview && m.width >= minPreviewAt {
+		return m.width - previewWidth - 3
+	}
+	return m.width
+}
+
 // clampOffset scrolls the window the minimum needed to keep the cursor visible.
+// Offset is a row index; wrapping means a row can occupy more than one line,
+// so we measure visual height rather than assuming one line per row.
 func (m *Model) clampOffset() {
 	h := m.listHeight()
+	w := m.listWidth()
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
-	if m.cursor >= m.offset+h {
-		m.offset = m.cursor - h + 1
-	}
-	if maxOffset := len(m.rows) - h; m.offset > maxOffset {
-		m.offset = max(maxOffset, 0)
+	for m.offset < m.cursor && m.visualSpan(m.offset, m.cursor, w) > h {
+		m.offset++
 	}
 	if m.offset < 0 {
 		m.offset = 0
+	}
+}
+
+// visualSpan is the number of terminal lines rows [from, to] occupy.
+func (m Model) visualSpan(from, to, width int) int {
+	n := 0
+	for i := from; i <= to && i < len(m.rows); i++ {
+		n += m.rowVisualHeight(i, width)
+	}
+	return n
+}
+
+func (m Model) rowVisualHeight(i, width int) int {
+	if i < 0 || i >= len(m.rows) {
+		return 0
+	}
+	switch m.rows[i].kind {
+	case rowHeader:
+		if i > 0 {
+			return 2
+		}
+		return 1
+	case rowSession:
+		return len(m.sessionTitleLines(i, width))
+	default:
+		return 1
 	}
 }
 
@@ -103,13 +137,19 @@ func (m Model) renderList(width int) string {
 		return faint.Render("  no sessions")
 	}
 	h := m.listHeight()
-	start := m.offset
-	end := min(start+h, len(m.rows))
 
 	var b strings.Builder
-	for i := start; i < end; i++ {
+	used := 0
+	end := m.offset
+	for i := m.offset; i < len(m.rows); i++ {
+		vh := m.rowVisualHeight(i, width)
+		if used > 0 && used+vh > h {
+			break
+		}
 		b.WriteString(m.renderRow(i, width))
 		b.WriteByte('\n')
+		used += vh
+		end = i + 1
 	}
 	if end < len(m.rows) {
 		b.WriteString(faint.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)))
@@ -122,6 +162,9 @@ func (m Model) renderRow(i, width int) string {
 	switch r.kind {
 	case rowHeader:
 		line := header.Render(r.text)
+		if r.count > 0 {
+			line += dim.Render(fmt.Sprintf("  %d", r.count))
+		}
 		if i > 0 {
 			return "\n" + line
 		}
@@ -146,37 +189,158 @@ func (m Model) renderNewRow(i int) string {
 func (m Model) renderSessionRow(i, width int) string {
 	r := m.rows[i]
 	s := r.session
+	lines := m.sessionTitleLines(i, width)
 
-	// Right-hand metadata is fixed width so titles line up. The path only
-	// appears where it adds information, which the HERE section does not.
 	meta := fmt.Sprintf("%*s %-*s", ageColumn, age(s.Modified), modelColumn, shortModel(s.Model))
 	var path string
 	if r.section != group.KindCwd {
 		path = group.Abbreviate(s.Cwd)
 	}
 
-	titleWidth := width - lipgloss.Width(meta) - 8
-	if path != "" {
-		titleWidth -= 26
-	}
-	titleWidth = max(titleWidth, 12)
-
-	name := pad(clip(s.Title, titleWidth), titleWidth)
-	line := "    " + title.Render(name)
+	cursor, tree := m.sessionPrefix(i)
+	name := pad(lines[0], m.titleWidth(i, width))
+	painted := m.paintTitle(name, i == m.cursor, r.context)
+	var line string
 	if i == m.cursor {
-		line = marker.Render("  ▸ ") + selected.Render(name)
+		line = marker.Render(cursor) + faint.Render(tree) + painted
+	} else {
+		line = cursor + faint.Render(tree) + painted
 	}
 
-	// A dot marks titles Claude wrote itself, as opposed to a first prompt.
 	if s.AITitled {
 		line += aiMark.Render(" ·")
 	} else {
 		line += "  "
 	}
+	if s.Missing {
+		line += " " + warn.Render("gone")
+	}
 	if path != "" {
 		line += " " + faint.Render(pad(clip(path, 24), 25))
 	}
-	return line + " " + dim.Render(meta)
+	line += " " + dim.Render(meta)
+
+	if len(lines) == 1 {
+		return line
+	}
+	contPrefix := strings.Repeat(" ", lipgloss.Width(cursor+tree))
+	var b strings.Builder
+	b.WriteString(line)
+	for _, extra := range lines[1:] {
+		b.WriteByte('\n')
+		b.WriteString(contPrefix + m.paintTitle(extra, i == m.cursor, r.context))
+	}
+	return b.String()
+}
+
+func (m Model) sessionPrefix(i int) (cursor, tree string) {
+	r := m.rows[i]
+	if i == m.cursor {
+		cursor = "  ▸ "
+	} else {
+		cursor = "    "
+	}
+	if r.depth <= 0 {
+		return cursor, ""
+	}
+	var b strings.Builder
+	for d := 1; d < r.depth; d++ {
+		b.WriteString("   ")
+	}
+	if r.last {
+		b.WriteString("└─ ")
+	} else {
+		b.WriteString("├─ ")
+	}
+	return cursor, b.String()
+}
+
+func (m Model) titleWidth(i, width int) int {
+	r := m.rows[i]
+	meta := fmt.Sprintf("%*s %-*s", ageColumn, age(r.session.Modified), modelColumn, shortModel(r.session.Model))
+	cursor, tree := m.sessionPrefix(i)
+	w := width - lipgloss.Width(meta) - lipgloss.Width(cursor+tree) - 2
+	if r.section != group.KindCwd {
+		w -= 26
+	}
+	return max(w, 12)
+}
+
+func (m Model) sessionTitleLines(i, width int) []string {
+	tw := m.titleWidth(i, width)
+	return wrapTitle(m.rows[i].session.Title, tw, titleLines)
+}
+
+func (m Model) parentTitle(id string) string {
+	for _, s := range m.sessions {
+		if s.ID == id {
+			if s.Title != "" {
+				return s.Title
+			}
+			return id
+		}
+	}
+	return id
+}
+
+// paintTitle styles a title, highlighting query terms and dimming ancestors
+// that are only present so a matching fork keeps its parent.
+func (m Model) paintTitle(text string, sel, context bool) string {
+	base := title
+	hit := accent
+	if sel {
+		base = selected
+		hit = marker
+	} else if context {
+		base = faint
+		hit = accent
+	}
+	if m.query == "" {
+		return base.Render(text)
+	}
+	return highlight(text, strings.Fields(strings.ToLower(m.query)), base, hit)
+}
+
+func highlight(text string, terms []string, base, hit lipgloss.Style) string {
+	if len(terms) == 0 || text == "" {
+		return base.Render(text)
+	}
+	lower := strings.ToLower(text)
+	mark := make([]bool, len(text))
+	for _, t := range terms {
+		if t == "" {
+			continue
+		}
+		from := 0
+		for {
+			i := strings.Index(lower[from:], t)
+			if i < 0 {
+				break
+			}
+			i += from
+			for j := i; j < i+len(t) && j < len(mark); j++ {
+				mark[j] = true
+			}
+			from = i + len(t)
+		}
+	}
+	var b strings.Builder
+	run := 0
+	on := mark[0]
+	for i := 1; i <= len(text); i++ {
+		if i == len(text) || mark[i] != on {
+			chunk := text[run:i]
+			if on {
+				b.WriteString(hit.Render(chunk))
+			} else {
+				b.WriteString(base.Render(chunk))
+			}
+			if i < len(text) {
+				run, on = i, mark[i]
+			}
+		}
+	}
+	return b.String()
 }
 
 func (m Model) renderPreview() string {
@@ -187,8 +351,27 @@ func (m Model) renderPreview() string {
 	s := r.session
 
 	var b strings.Builder
-	b.WriteString(header.Render(clip(s.Title, previewWidth)))
+	for i, line := range wrapTitle(s.Title, previewWidth, 3) {
+		if i == 0 {
+			b.WriteString(header.Render(line))
+		} else {
+			b.WriteString("\n")
+			b.WriteString(header.Render(line))
+		}
+	}
 	b.WriteString("\n")
+	if s.ParentID != "" {
+		label := "fork of "
+		if s.Clone {
+			label = "clone of "
+		}
+		b.WriteString(faint.Render(label + clip(m.parentTitle(s.ParentID), previewWidth-8)))
+		b.WriteString("\n")
+	}
+	if s.Missing {
+		b.WriteString(warn.Render("directory no longer exists"))
+		b.WriteString("\n")
+	}
 	b.WriteString(faint.Render(group.Abbreviate(s.Cwd)))
 	if s.Branch != "" && s.Branch != "HEAD" {
 		b.WriteString(faint.Render("  " + s.Branch))
@@ -240,7 +423,7 @@ func (m Model) renderFooter() string {
 	}
 	lines = append(lines, dim.Render("model  ")+strings.Join(models, "  "))
 
-	hints := "↑↓ move · ←→ model · ⏎ start · f fork · d delete · / search · p preview · q quit"
+	hints := "↑↓ move · pgup/pgdn · ←→ model · ⏎ start · f fork · y copy id · d delete · / search · p preview · q quit"
 	if m.searching {
 		hints = "type to filter · ↑↓ move · ⏎ start · esc clear"
 	}
@@ -336,6 +519,37 @@ func wrap(s string, width int) string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// wrapTitle word-wraps s to width, then keeps at most maxLines, ellipsizing
+// the last line if the text still overflows.
+func wrapTitle(s string, width, maxLines int) []string {
+	if maxLines < 1 {
+		maxLines = 1
+	}
+	if width < 8 {
+		width = 8
+	}
+	raw := strings.Split(wrap(s, width), "\n")
+	var lines []string
+	for _, line := range raw {
+		if lipgloss.Width(line) > width {
+			line = clip(line, width)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	if len(lines) <= maxLines {
+		return lines
+	}
+	kept := append([]string{}, lines[:maxLines-1]...)
+	rest := strings.Join(lines[maxLines-1:], " ")
+	kept = append(kept, clip(rest, width))
+	return kept
 }
 
 // indent prefixes every line, so a wrapped block stays visually one unit.

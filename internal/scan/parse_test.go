@@ -49,6 +49,12 @@ const (
 	recAITitle   = `{"type":"ai-title","aiTitle":"Pod restart investigation","sessionId":"x"}`
 	recAITitle2  = `{"type":"ai-title","aiTitle":"Newer title wins","sessionId":"x"}`
 	recNoise     = `{"type":"mode","mode":"normal"}`
+	recForked    = `{"type":"attachment","forkedFrom":{"sessionId":"e8bcd8da-8714-4c09-b450-0b9f0e97e994","messageUuid":"76fd993e-bdc1-442c-9153-8e763c4730ef"},"sessionId":"1f87bae3-e778-4aa6-9f70-fb6e94c5e916"}`
+	recParentMsg = `{"type":"user","parentUuid":"not-a-session","origin":{"kind":"human"},"message":{"role":"user","content":"forked prompt that is long enough"},"cwd":"/Users/kj/repo"}`
+	recCustom    = `{"type":"custom-title","customTitle":"tldraw offline access","sessionId":"x"}`
+	recAgent     = `{"type":"agent-name","agentName":"Fix malformed JSON in Claude settings ⑂","sessionId":"x"}`
+	recRelocated = `{"type":"relocated","relocatedCwd":"/new/place","sessionId":"x"}`
+	recContinued = `{"type":"continued-in","continuedInSessionId":"child-id","sessionId":"x"}`
 )
 
 func TestParseWholeFile(t *testing.T) {
@@ -75,6 +81,91 @@ func TestParseWholeFile(t *testing.T) {
 	}
 	if m.Preview[1].Role != "assistant" || m.Preview[1].Text != "here is the answer" {
 		t.Errorf("preview tail = %+v, want assistant text block extracted", m.Preview[1])
+	}
+	if m.ForkedFrom != "" {
+		t.Errorf("ForkedFrom = %q, want empty on an unforked transcript", m.ForkedFrom)
+	}
+}
+
+func TestParseForkedFrom(t *testing.T) {
+	head := []byte(strings.Join([]string{recForked, recCwd, recParentMsg}, "\n") + "\n")
+	m := Parse(head, nil)
+	if m.ForkedFrom != "e8bcd8da-8714-4c09-b450-0b9f0e97e994" {
+		t.Errorf("ForkedFrom = %q, want the parent session id", m.ForkedFrom)
+	}
+}
+
+func TestParseCustomTitleAndRelocated(t *testing.T) {
+	head := []byte(strings.Join([]string{recCwd, recCustom, recRelocated, recContinued, recAgent}, "\n") + "\n")
+	m := Parse(head, nil)
+	if m.CustomTitle != "tldraw offline access" {
+		t.Errorf("CustomTitle = %q", m.CustomTitle)
+	}
+	if m.RelocatedCwd != "/new/place" {
+		t.Errorf("RelocatedCwd = %q", m.RelocatedCwd)
+	}
+	if m.ContinuedIn != "child-id" {
+		t.Errorf("ContinuedIn = %q", m.ContinuedIn)
+	}
+	if m.AgentName != "Fix malformed JSON in Claude settings ⑂" {
+		t.Errorf("AgentName = %q", m.AgentName)
+	}
+}
+
+func TestDisplayTitlePrefersCustomThenStripsCloneMark(t *testing.T) {
+	got, titled := displayTitle(Meta{CustomTitle: "my name", AITitle: "ai ⑂", Title: "prompt"})
+	if got != "my name" || !titled {
+		t.Errorf("custom: %q %v", got, titled)
+	}
+	got, titled = displayTitle(Meta{AITitle: "Fix malformed JSON in Claude settings ⑂", Title: "prompt"})
+	if got != "Fix malformed JSON in Claude settings" || !titled {
+		t.Errorf("ai clone: %q %v", got, titled)
+	}
+}
+
+func TestLinkClonesNestsMarkedUnderUnmarked(t *testing.T) {
+	sessions := []Session{
+		{ID: "c1", Path: "/p/c1.jsonl", Title: "Fix JSON", Clone: true},
+		{ID: "orig", Path: "/p/orig.jsonl", Title: "Fix JSON", Clone: false},
+		{ID: "c2", Path: "/p/c2.jsonl", Title: "Fix JSON", Clone: true},
+		{ID: "other", Path: "/p/o.jsonl", Title: "unrelated", Clone: false},
+	}
+	linkClones(sessions)
+	if sessions[0].ParentID != "orig" || sessions[2].ParentID != "orig" {
+		t.Errorf("clone parents = %q %q, want orig", sessions[0].ParentID, sessions[2].ParentID)
+	}
+	if sessions[3].ParentID != "" {
+		t.Errorf("unrelated nested under %q", sessions[3].ParentID)
+	}
+}
+
+func TestLinkContinuesNestsTarget(t *testing.T) {
+	sessions := []Session{
+		{ID: "child", Path: "/p/c.jsonl", Title: "next"},
+		{ID: "parent", Path: "/p/p.jsonl", Title: "orig", ContinuedIn: "child"},
+	}
+	linkContinues(sessions)
+	if sessions[0].ParentID != "parent" {
+		t.Errorf("child parent = %q, want parent", sessions[0].ParentID)
+	}
+}
+
+func TestLinkClonesIgnoresIdenticalTitlesWithoutMark(t *testing.T) {
+	sessions := []Session{
+		{ID: "a", Path: "/p/a.jsonl", Title: "same title"},
+		{ID: "b", Path: "/p/b.jsonl", Title: "same title"},
+	}
+	linkClones(sessions)
+	if sessions[0].ParentID != "" || sessions[1].ParentID != "" {
+		t.Fatal("identical titles without a clone mark must stay peers")
+	}
+}
+
+func TestParseIgnoresParentUuid(t *testing.T) {
+	head := []byte(recParentMsg + "\n")
+	m := Parse(head, nil)
+	if m.ForkedFrom != "" {
+		t.Errorf("ForkedFrom = %q, parentUuid is a message id not a session", m.ForkedFrom)
 	}
 }
 

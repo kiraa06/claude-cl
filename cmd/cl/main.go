@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -43,8 +44,9 @@ usage:
 
 keys:
   ↑↓ / jk   move            ⏎   start or resume
-  ←→ / hl   choose model    f   fork into a new session
-  /         search          d   delete (moves to trash)
+  pgup/pgdn page            f   fork into a new session
+  ←→ / hl   choose model    d   delete (moves to trash)
+  /         search          y   copy session id
   p         preview         q   quit
 `
 
@@ -148,5 +150,5 @@ func parseArgs(args []string) (query string, a action) {
 	if len(terms) == 0 {
 		return "", actionPick
 	}
-	return terms[0], actionPick
+	return strings.Join(terms, " "), actionPick
 }

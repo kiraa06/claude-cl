@@ -46,15 +46,19 @@ type Turn struct {
 
 // Session is everything the picker needs to show and launch one session.
 type Session struct {
-	ID       string
-	Path     string
-	Title    string
-	AITitled bool // title came from Claude's own ai-title record
-	Cwd      string
-	Branch   string
-	Model    string
-	Modified time.Time
-	Preview  []Turn
+	ID          string
+	Path        string
+	Title       string
+	AITitled    bool // title came from Claude's own ai-title record
+	Cwd         string
+	Branch      string
+	Model       string
+	Modified    time.Time
+	Preview     []Turn
+	ParentID    string // session this one was forked or cloned from, if any
+	ContinuedIn string // session this one was continued in, if any
+	Clone       bool   // Claude marked this as a branch/clone
+	Missing     bool   // working directory no longer exists
 }
 
 // Discover returns the transcript paths of real sessions under root.
@@ -129,6 +133,9 @@ func All(root string) ([]Session, error) {
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
+	linkContinues(sessions)
+	linkClones(sessions)
+	markMissing(sessions)
 	return sessions, nil
 }
 
@@ -166,30 +173,129 @@ func one(path string) (Session, bool) {
 	// one is worth a second, deeper look: sessions that open with "ok" or
 	// "Yoo!" carry the real request a turn or two later, often just past the
 	// head window.
-	if m.AITitle == "" && len([]rune(m.Title)) < minTitleLen {
+	if m.AITitle == "" && m.CustomTitle == "" && len([]rune(m.Title)) < minTitleLen {
 		if t := deepScan(path); len([]rune(t)) > len([]rune(m.Title)) {
 			m.Title = t
 		}
 	}
-	if m.Title == "" && m.AITitle == "" {
-		return Session{}, false // no human turn: nothing to resume
+	// Title-only stubs (ai-title / agent-name, no human prompt) are not
+	// resumable; Claude writes them as branch placeholders.
+	if m.Title == "" && m.CustomTitle == "" {
+		return Session{}, false
 	}
 
-	s := Session{
-		ID:       strings.TrimSuffix(filepath.Base(path), ".jsonl"),
-		Path:     path,
-		Title:    m.AITitle,
-		AITitled: true,
-		Cwd:      m.Cwd,
-		Branch:   m.Branch,
-		Model:    m.Model,
-		Modified: fi.ModTime(),
-		Preview:  m.Preview,
+	cwd := m.Cwd
+	if m.RelocatedCwd != "" {
+		cwd = m.RelocatedCwd
 	}
-	if s.Title == "" {
-		s.Title, s.AITitled = m.Title, false
+	title, titled := displayTitle(m)
+	s := Session{
+		ID:          strings.TrimSuffix(filepath.Base(path), ".jsonl"),
+		Path:        path,
+		Title:       title,
+		AITitled:    titled,
+		Cwd:         cwd,
+		Branch:      m.Branch,
+		Model:       m.Model,
+		Modified:    fi.ModTime(),
+		Preview:     m.Preview,
+		ParentID:    m.ForkedFrom,
+		ContinuedIn: m.ContinuedIn,
+		Clone:       hasCloneMark(m.AITitle) || hasCloneMark(m.AgentName),
 	}
 	return s, true
+}
+
+func displayTitle(m Meta) (string, bool) {
+	if t := strings.TrimSpace(m.CustomTitle); t != "" {
+		return truncate(t, titleMaxLen), true
+	}
+	if t := stripCloneMark(m.AITitle); t != "" {
+		return t, true
+	}
+	if t := stripCloneMark(m.AgentName); t != "" {
+		return t, true
+	}
+	return m.Title, false
+}
+
+// linkContinues nests a continuation under the session that pointed at it,
+// when the continuation has no fork parent of its own.
+func linkContinues(sessions []Session) {
+	byID := make(map[string]int, len(sessions))
+	for i, s := range sessions {
+		if s.ID != "" {
+			byID[s.ID] = i
+		}
+	}
+	for i, s := range sessions {
+		if s.ContinuedIn == "" {
+			continue
+		}
+		j, ok := byID[s.ContinuedIn]
+		if !ok || sessions[j].ParentID != "" {
+			continue
+		}
+		sessions[j].ParentID = sessions[i].ID
+	}
+}
+
+// linkClones nests Claude's ⑂-marked branches under the unmarked session
+// that shares their title in the same project directory. coincidental
+// identical titles without a clone mark are left as peers.
+func linkClones(sessions []Session) {
+	type key struct{ dir, title string }
+	groups := make(map[key][]int)
+	for i, s := range sessions {
+		k := key{filepath.Dir(s.Path), strings.ToLower(stripCloneMark(s.Title))}
+		if k.title == "" {
+			continue
+		}
+		groups[k] = append(groups[k], i)
+	}
+	for _, idxs := range groups {
+		if len(idxs) < 2 {
+			continue
+		}
+		hasClone := false
+		parent := -1
+		for _, i := range idxs {
+			if sessions[i].Clone {
+				hasClone = true
+			} else if parent < 0 {
+				parent = i
+			}
+		}
+		if !hasClone {
+			continue
+		}
+		if parent < 0 {
+			parent = idxs[len(idxs)-1]
+		}
+		pid := sessions[parent].ID
+		for _, i := range idxs {
+			if i == parent || sessions[i].ParentID != "" {
+				continue
+			}
+			sessions[i].ParentID = pid
+		}
+	}
+}
+
+func markMissing(sessions []Session) {
+	exists := make(map[string]bool)
+	for i, s := range sessions {
+		if s.Cwd == "" {
+			continue
+		}
+		ok, known := exists[s.Cwd]
+		if !known {
+			fi, err := os.Stat(s.Cwd)
+			ok = err == nil && fi.IsDir()
+			exists[s.Cwd] = ok
+		}
+		sessions[i].Missing = !ok
+	}
 }
 
 // windows reads the head and tail slices of a transcript. Small files are read

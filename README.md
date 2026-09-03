@@ -68,9 +68,11 @@ by default, so `cl` then `⏎` is the same as running `claude`.
 | Key | |
 |---|---|
 | `↑` `↓` / `j` `k` | move — section headers are skipped |
+| `PgUp` `PgDn` / `Ctrl+U` `Ctrl+D` | jump a screen |
 | `←` `→` / `h` `l` / `Tab` | choose the model |
 | `⏎` | start or resume the highlighted row |
 | `f` | **fork** — resume under a new session id, leaving the original untouched |
+| `y` | copy the session id |
 | `d` | **delete** — moves the transcript to the trash, never erases it |
 | `/` | search titles, directories, branches and models |
 | `p` | toggle the preview pane |
@@ -85,6 +87,10 @@ by default, so `cl` then `⏎` is the same as running `claude`.
 - **REPO** — the rest of the current git repository, including its worktrees.
   Skipped when you aren't in a repo.
 - **ALL PROJECTS** — everywhere else, newest first.
+- Forks nest under the session they were forked from, so a continuation sits
+  as a child of the original chat rather than a duplicate at the same indent.
+  Claude's own clones (the `⑂` branches) nest the same way. A name you set
+  in Claude wins over the generated title.
 
 ### Names conversations properly
 

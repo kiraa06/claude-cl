@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,6 +159,34 @@ func TestModelCyclingWraps(t *testing.T) {
 	}
 }
 
+func TestMissingDirectoryRefusesLaunch(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "gone", Cwd: "/no/such/dir", Title: "old tmp project", Missing: true,
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m = press(m, "down", "enter")
+	if m.Choice != nil {
+		t.Fatal("resumed a session whose directory is gone")
+	}
+	if m.status == "" {
+		t.Error("want an explanation when the directory is gone")
+	}
+}
+
+func TestYankCopiesSessionID(t *testing.T) {
+	m := press(testModel(t), "y")
+	if m.status == "" && m.Choice != nil {
+		t.Fatal("yank on New session should not launch")
+	}
+	m = press(testModel(t), "down", "y")
+	if !strings.Contains(m.status, "copied") && !strings.Contains(m.status, "could not copy") {
+		t.Errorf("status = %q, want a copy result", m.status)
+	}
+	if m.Choice != nil {
+		t.Fatal("yank must not launch")
+	}
+}
+
 func TestForkRequiresASession(t *testing.T) {
 	m := press(testModel(t), "f") // still on the New session row
 	if m.Choice != nil {
@@ -303,6 +332,60 @@ func TestEmptyStoreStillOffersNewSession(t *testing.T) {
 	}
 	if m := press(m, "enter"); m.Choice == nil || m.Choice.Mode != launch.New {
 		t.Errorf("Choice = %+v, want a New session", m.Choice)
+	}
+}
+
+func TestViewWrapsLongTitle(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "long", Cwd: "/repo/backend",
+		Title:    "Nessus Windows to Linux migration inventory for the whole fleet",
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "Nessus Windows to Linux") {
+		t.Fatalf("missing title start:\n%s", out)
+	}
+	if !strings.Contains(out, "inventory") {
+		t.Errorf("title was clipped instead of wrapping:\n%s", out)
+	}
+}
+
+func TestSearchKeepsParentOfMatchingFork(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "original nessus work", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked inventory pass", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m = press(m, "/", "i", "n", "v", "e", "n")
+	var ids []string
+	var depths []int
+	for _, r := range m.rows {
+		if r.kind == rowSession {
+			ids = append(ids, r.session.ID)
+			depths = append(depths, r.depth)
+		}
+	}
+	if len(ids) != 2 || ids[0] != "parent" || ids[1] != "child" {
+		t.Errorf("rows = %v, want parent then child", ids)
+	}
+	if len(depths) == 2 && (depths[0] != 0 || depths[1] != 1) {
+		t.Errorf("depths = %v, want 0 then 1", depths)
+	}
+}
+
+func TestViewNestsForkUnderParent(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "main chat", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked chat", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	out := m.View()
+	if !strings.Contains(out, "└─ ") && !strings.Contains(out, "├─ ") {
+		t.Errorf("fork was not nested under parent:\n%s", out)
+	}
+	parentAt := strings.Index(out, "main chat")
+	childAt := strings.Index(out, "forked chat")
+	if parentAt < 0 || childAt < 0 || childAt < parentAt {
+		t.Errorf("child should render after parent:\n%s", out)
 	}
 }
 
