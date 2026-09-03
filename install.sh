@@ -66,6 +66,18 @@ mkdir -p "$BINDIR"
 mv "$tmp/cl" "$BINDIR/cl"
 chmod +x "$BINDIR/cl"
 
+if [ "$os" = darwin ]; then
+	# Go ships linker-signed binaries. Once one has been downloaded, Gatekeeper
+	# rejects it and the kernel kills it on launch ("killed: 9"), so clear the
+	# download marker and re-sign it ad hoc.
+	xattr -c "$BINDIR/cl" 2>/dev/null || true
+	if command -v codesign >/dev/null 2>&1; then
+		codesign --force --sign - "$BINDIR/cl" >/dev/null 2>&1 ||
+			echo "warning: could not re-sign the binary; if it is killed on launch, run:
+  codesign --force --sign - $BINDIR/cl" >&2
+	fi
+fi
+
 echo "Installed $BINDIR/cl"
 
 case ":$PATH:" in

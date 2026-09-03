@@ -128,6 +128,17 @@ of every transcript and screens lines with a byte scan before parsing any JSON.
 **`cl: claude not found on PATH`** — `cl` launches Claude Code, so it needs
 `claude` installed. Check with `which claude`.
 
+**macOS says `killed: 9` when you run `cl`.** Gatekeeper rejects Go's
+linker-signed binaries once they have been downloaded. The install script
+re-signs it for you; if you unpacked a release by hand, do the same:
+
+```sh
+xattr -c ./cl && codesign --force --sign - ./cl
+```
+
+Installing with `go install` avoids this entirely, since the binary is compiled
+on your own machine.
+
 **`command not found: cl` after installing** — `~/.local/bin` isn't on your
 `PATH`:
 
