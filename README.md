@@ -1,7 +1,7 @@
 <h1 align="center">cl</h1>
 
 <p align="center">
-  <em>Pick up where you left off in Claude Code.</em>
+  <em>Pick up where you left off in Claude Code, Grok, or Codex.</em>
 </p>
 
 <p align="center">

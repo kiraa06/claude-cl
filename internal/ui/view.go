@@ -31,7 +31,8 @@ const (
 	ageColumn    = 5
 	modelColumn  = 8
 	pathColumn   = 24
-	titleLines   = 2 // word-wrap budget for a session title
+	titleLines   = 2    // word-wrap budget for a session title
+	forkMark     = " ⎇" // suffix on nested forks/clones; tree prefix stays
 )
 
 func (m Model) footerLines() int {
@@ -313,6 +314,9 @@ func (m Model) renderSessionRow(i, width int) string {
 	if s.AITitled {
 		painted += aiMark.Render(" ·")
 	}
+	if s.ParentID != "" {
+		painted += faint.Render(forkMark)
+	}
 	name := pad(painted, inner)
 	var title string
 	if sel {
@@ -369,8 +373,15 @@ func (m Model) titleWidth(i, width int) int {
 	tw, _ := m.titleColWidth(width)
 	cursor, tree := m.sessionPrefix(i)
 	inner := max(tw-lipgloss.Width(cursor+tree), 8)
-	if i < len(m.rows) && m.rows[i].session.AITitled {
+	if i < 0 || i >= len(m.rows) {
+		return inner
+	}
+	s := m.rows[i].session
+	if s.AITitled {
 		inner = max(inner-2, 8)
+	}
+	if s.ParentID != "" {
+		inner = max(inner-lipgloss.Width(forkMark), 8)
 	}
 	return inner
 }

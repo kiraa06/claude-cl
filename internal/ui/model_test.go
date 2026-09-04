@@ -473,6 +473,36 @@ func TestViewNestsForkUnderParent(t *testing.T) {
 	}
 }
 
+func TestForkMarkAtEndOfNestedTitle(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "main chat", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked chat", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "└─ ") && !strings.Contains(out, "├─ ") {
+		t.Fatalf("tree prefix missing:\n%s", out)
+	}
+	if !strings.Contains(out, "⎇") {
+		t.Fatalf("missing fork mark at end of nested row:\n%s", out)
+	}
+	if strings.Contains(out, "⎇ │") || strings.Contains(out, "⎇│") {
+		t.Errorf("fork mark leaked into the Path gutter:\n%s", out)
+	}
+	parentLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "main chat") {
+			parentLine = line
+			break
+		}
+	}
+	if strings.Contains(parentLine, "⎇") {
+		t.Errorf("root row should not carry the fork mark:\n%s", parentLine)
+	}
+}
+
 func TestViewRendersWithoutPanicAtManySizes(t *testing.T) {
 	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}, {60, 12}, {100, 18}}
 	for _, sz := range sizes {
