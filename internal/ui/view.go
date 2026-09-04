@@ -79,6 +79,16 @@ func (m *Model) clampOffset() {
 	for m.offset < m.cursor && m.visualSpan(m.offset, m.cursor, w) > h {
 		m.offset++
 	}
+	last := len(m.rows) - 1
+	for m.offset > 0 && last >= 0 && m.visualSpan(m.offset-1, last, w) <= h {
+		m.offset--
+	}
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	for m.offset < m.cursor && m.visualSpan(m.offset, m.cursor, w) > h {
+		m.offset++
+	}
 	if m.offset < 0 {
 		m.offset = 0
 	}
@@ -146,14 +156,17 @@ func (m Model) View() string {
 }
 
 func framePane(content string, outerW, outerH int) string {
-	innerW := max(outerW-4, 1) // border + horizontal padding
-	innerH := max(outerH-2, 1) // border
+	// lipgloss Width is the padded content box; Padding(0,1) is taken from it
+	// and the border is added after. Width(outer-2) + border 2 = outerW, with
+	// 1 cell of padding on each side leaving outerW-4 for the inner clipper.
+	innerW := max(outerW-4, 1)
+	innerH := max(outerH-2, 1)
 	clipped := lipgloss.NewStyle().
 		Width(innerW).MaxWidth(innerW).
 		MaxHeight(innerH).
 		Render(content)
 	return paneBorder.
-		Width(innerW).MaxWidth(outerW).
+		Width(max(outerW-2, 1)).MaxWidth(outerW).
 		Height(innerH).MaxHeight(outerH).
 		Padding(0, 1).
 		Render(clipped)
@@ -173,7 +186,7 @@ func (m Model) renderListPane(outerW, outerH int) string {
 }
 
 func (m Model) renderPreviewPane(outerW, outerH int) string {
-	return framePane(m.renderPreview(), outerW, outerH)
+	return framePane(m.renderPreview(max(outerW-4, 8)), outerW, outerH)
 }
 
 func (m Model) renderTitleBar(width int) string {
@@ -220,10 +233,19 @@ func (m Model) renderList(width int) string {
 
 	var b strings.Builder
 	used := 0
+	if m.offset > 0 {
+		b.WriteString(faint.Render(fmt.Sprintf("  ↑ %d more", m.offset)))
+		b.WriteByte('\n')
+		used++
+	}
 	end := m.offset
 	for i := m.offset; i < len(m.rows); i++ {
 		vh := m.rowVisualHeight(i, width)
-		if used > 0 && used+vh > h {
+		need := vh
+		if i < len(m.rows)-1 {
+			need++ // leave a line for ↓ N more
+		}
+		if used > 0 && used+need > h {
 			break
 		}
 		b.WriteString(m.renderRow(i, width))
@@ -420,37 +442,49 @@ func highlight(text string, terms []string, base, hit lipgloss.Style) string {
 	if len(terms) == 0 || text == "" {
 		return base.Render(text)
 	}
-	lower := strings.ToLower(text)
-	mark := make([]bool, len(text))
+	runes := []rune(text)
+	fold := make([]rune, len(runes))
+	for i, r := range runes {
+		fold[i] = unicode.ToLower(r)
+	}
+	mark := make([]bool, len(runes))
 	for _, t := range terms {
 		if t == "" {
 			continue
 		}
-		from := 0
-		for {
-			i := strings.Index(lower[from:], t)
-			if i < 0 {
-				break
+		pat := []rune(t)
+		for i, r := range pat {
+			pat[i] = unicode.ToLower(r)
+		}
+		for i := 0; i+len(pat) <= len(fold); i++ {
+			match := true
+			for j, p := range pat {
+				if fold[i+j] != p {
+					match = false
+					break
+				}
 			}
-			i += from
-			for j := i; j < i+len(t) && j < len(mark); j++ {
-				mark[j] = true
+			if !match {
+				continue
 			}
-			from = i + len(t)
+			for j := range pat {
+				mark[i+j] = true
+			}
+			i += len(pat) - 1
 		}
 	}
 	var b strings.Builder
 	run := 0
 	on := mark[0]
-	for i := 1; i <= len(text); i++ {
-		if i == len(text) || mark[i] != on {
-			chunk := text[run:i]
+	for i := 1; i <= len(runes); i++ {
+		if i == len(runes) || mark[i] != on {
+			chunk := string(runes[run:i])
 			if on {
 				b.WriteString(hit.Render(chunk))
 			} else {
 				b.WriteString(base.Render(chunk))
 			}
-			if i < len(text) {
+			if i < len(runes) {
 				run, on = i, mark[i]
 			}
 		}
@@ -458,7 +492,10 @@ func highlight(text string, terms []string, base, hit lipgloss.Style) string {
 	return b.String()
 }
 
-func (m Model) renderPreview() string {
+func (m Model) renderPreview(width int) string {
+	if width < 8 {
+		width = 8
+	}
 	r, ok := m.current()
 	if !ok || r.kind != rowSession {
 		return faint.Render("New session\n\nStarts " + m.currentTool() + " in\n" + group.Abbreviate(m.cwd))
@@ -466,7 +503,7 @@ func (m Model) renderPreview() string {
 	s := r.session
 
 	var b strings.Builder
-	for i, line := range wrapTitle(s.Title, previewWidth, 3) {
+	for i, line := range wrapTitle(s.Title, width, 3) {
 		if i == 0 {
 			b.WriteString(header.Render(line))
 		} else {
@@ -480,7 +517,7 @@ func (m Model) renderPreview() string {
 		if s.Clone {
 			label = "clone of "
 		}
-		b.WriteString(faint.Render(label + clip(m.parentTitle(s.ParentID), previewWidth-8)))
+		b.WriteString(faint.Render(label + clip(m.parentTitle(s.ParentID), max(width-8, 8))))
 		b.WriteString("\n")
 	}
 	if s.Missing {
@@ -506,7 +543,7 @@ func (m Model) renderPreview() string {
 		}
 		b.WriteString(style.Render(who))
 		b.WriteString("\n")
-		b.WriteString(dim.Render(indent(wrap(clip(t.Text, 240), previewWidth-2), "  ")))
+		b.WriteString(dim.Render(indent(wrap(clip(t.Text, 240), max(width-2, 8)), "  ")))
 		b.WriteString("\n\n")
 	}
 	return b.String()
@@ -540,7 +577,7 @@ func (m Model) renderFooter() string {
 
 	hints := "↑↓ move · pgup/pgdn · ←→ model · ⏎ start · f fork · y copy id · d delete · / search · p preview · T dark/light · q quit"
 	if len(m.tools) >= 2 {
-		hints = "↑↓ move · ←→ model · ⏎ start · f fork · t " + strings.Join(m.tools, "/") + " · T dark/light · / search · p preview · q quit"
+		hints = "↑↓ move · pgup/pgdn · ←→ model · ⏎ start · f fork · y copy id · d delete · t " + strings.Join(m.tools, "/") + " · T dark/light · / search · p preview · q quit"
 	}
 	if m.searching {
 		hints = "type to filter · ↑↓ move · ⏎ start · esc clear"
@@ -696,25 +733,6 @@ func clipLines(s string, w int) string {
 		parts[i] = clipper.Render(line)
 	}
 	return strings.Join(parts, "\n")
-}
-
-// fitHeight keeps s to h lines without MaxWidth-clipping, which would slice
-// box-drawing borders and leave a black strip.
-func fitHeight(s string, h int) string {
-	if h < 1 {
-		h = 1
-	}
-	raw := strings.Split(s, "\n")
-	for len(raw) > 0 && raw[len(raw)-1] == "" {
-		raw = raw[:len(raw)-1]
-	}
-	if len(raw) > h {
-		raw = raw[:h]
-	}
-	for len(raw) < h {
-		raw = append(raw, "")
-	}
-	return strings.Join(raw, "\n")
 }
 
 func plural(n int, word string) string {

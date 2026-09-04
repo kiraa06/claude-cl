@@ -186,10 +186,27 @@ func tomlValue(path, key string) string {
 			continue
 		}
 		rest = strings.TrimSpace(rest)
-		rest = strings.Trim(rest, `"`)
+		if v, ok := tomlQuoted(rest); ok {
+			rest = v
+		} else if i := strings.Index(rest, "#"); i >= 0 {
+			rest = strings.TrimSpace(rest[:i])
+		}
 		if rest != "" {
 			found = rest // last match wins: [models] default sits below other tables
 		}
 	}
 	return found
+}
+
+// tomlQuoted returns the text between the first pair of double quotes.
+func tomlQuoted(s string) (string, bool) {
+	if !strings.HasPrefix(s, `"`) {
+		return "", false
+	}
+	rest := s[1:]
+	j := strings.IndexByte(rest, '"')
+	if j < 0 {
+		return "", false
+	}
+	return rest[:j], true
 }

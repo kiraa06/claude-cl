@@ -180,7 +180,8 @@ func one(path string) (Session, bool) {
 		}
 	}
 	// Title-only stubs (ai-title / agent-name, no human prompt) are not
-	// resumable; Claude writes them as branch placeholders.
+	// resumable; Claude writes them as branch placeholders. A custom title
+	// counts: the user named the session, so they mean to resume it.
 	if m.Title == "" && m.CustomTitle == "" {
 		return Session{}, false
 	}
@@ -210,7 +211,8 @@ func one(path string) (Session, bool) {
 
 func displayTitle(m Meta) (string, bool) {
 	if t := strings.TrimSpace(m.CustomTitle); t != "" {
-		return truncate(t, titleMaxLen), true
+		// User-renamed; the · marker is for titles Claude wrote itself.
+		return truncate(t, titleMaxLen), false
 	}
 	if t := stripCloneMark(m.AITitle); t != "" {
 		return t, true

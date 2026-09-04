@@ -35,7 +35,7 @@ type record struct {
 	GitBranch    string `json:"gitBranch"`
 	RelocatedCwd string `json:"relocatedCwd"`
 	ContinuedIn  string `json:"continuedInSessionId"`
-	Origin       struct {
+	Origin       *struct {
 		Kind string `json:"kind"`
 	} `json:"origin"`
 	ForkedFrom struct {
@@ -54,7 +54,6 @@ var (
 	markAITitle   = []byte(`"type":"ai-title"`)
 	markAssistant = []byte(`"type":"assistant"`)
 	markUser      = []byte(`"type":"user"`)
-	markHuman     = []byte(`"kind":"human"`)
 	markCwd       = []byte(`"cwd":"`)
 	markForked    = []byte(`"forkedFrom"`)
 	markCustom    = []byte(`"type":"custom-title"`)
@@ -81,8 +80,8 @@ func Parse(head, tail []byte) Meta {
 				m.Cwd, m.Branch = r.Cwd, r.GitBranch
 			}
 		}
-		if len(candidates) < titleCandidates && bytes.Contains(line, markUser) && bytes.Contains(line, markHuman) {
-			if r, ok := decode(line); ok && r.Type == "user" && r.Origin.Kind == "human" {
+		if len(candidates) < titleCandidates && bytes.Contains(line, markUser) {
+			if r, ok := decode(line); ok && isHumanTurn(r) {
 				if t := CleanTitle(textOf(r.Message.Content)); t != "" {
 					candidates = append(candidates, t)
 				}
@@ -135,8 +134,8 @@ func Parse(head, tail []byte) Meta {
 					m.Preview = appendTurn(m.Preview, Turn{"assistant", t})
 				}
 			}
-		case bytes.Contains(line, markUser) && bytes.Contains(line, markHuman):
-			if r, ok := decode(line); ok && r.Type == "user" && r.Origin.Kind == "human" {
+		case bytes.Contains(line, markUser):
+			if r, ok := decode(line); ok && isHumanTurn(r) {
 				if t := CleanTitle(textOf(r.Message.Content)); t != "" {
 					m.Preview = appendTurn(m.Preview, Turn{"user", t})
 				}
@@ -211,6 +210,21 @@ func decode(line []byte) (record, bool) {
 		return record{}, false
 	}
 	return r, true
+}
+
+// isHumanTurn reports whether a user record is a real prompt.
+//
+// Claude Code started writing origin.kind:"human" around 2.1.156. Older
+// transcripts omit origin or set it to null; those are still human turns.
+// Known non-human kinds (task-notification and the rest) stay excluded.
+func isHumanTurn(r record) bool {
+	if r.Type != "user" {
+		return false
+	}
+	if r.Origin == nil || r.Origin.Kind == "" || r.Origin.Kind == "human" {
+		return true
+	}
+	return false
 }
 
 func forEachLine(b []byte, fn func([]byte)) {
@@ -350,10 +364,10 @@ func deepScan(path string) string {
 		if len(candidates) >= titleCandidates {
 			return
 		}
-		if !bytes.Contains(line, markUser) || !bytes.Contains(line, markHuman) {
+		if !bytes.Contains(line, markUser) {
 			return
 		}
-		if r, ok := decode(line); ok && r.Type == "user" && r.Origin.Kind == "human" {
+		if r, ok := decode(line); ok && isHumanTurn(r) {
 			if t := CleanTitle(textOf(r.Message.Content)); t != "" {
 				candidates = append(candidates, t)
 			}

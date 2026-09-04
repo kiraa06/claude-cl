@@ -11,7 +11,10 @@ import (
 // copyText puts s on the clipboard. OSC 52 covers terminals that speak it
 // (including over ssh); pbcopy / wl-copy / xclip cover the rest.
 func copyText(s string) error {
-	fmt.Fprintf(os.Stdout, "\033]52;c;%s\a", base64.StdEncoding.EncodeToString([]byte(s)))
+	var oscErr error
+	if _, err := fmt.Fprintf(os.Stdout, "\033]52;c;%s\a", base64.StdEncoding.EncodeToString([]byte(s))); err != nil {
+		oscErr = err
+	}
 	for _, spec := range [][]string{
 		{"pbcopy"},
 		{"wl-copy"},
@@ -27,5 +30,5 @@ func copyText(s string) error {
 			return nil
 		}
 	}
-	return nil
+	return oscErr
 }

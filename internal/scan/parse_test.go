@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -114,8 +116,8 @@ func TestParseCustomTitleAndRelocated(t *testing.T) {
 
 func TestDisplayTitlePrefersCustomThenStripsCloneMark(t *testing.T) {
 	got, titled := displayTitle(Meta{CustomTitle: "my name", AITitle: "ai ⑂", Title: "prompt"})
-	if got != "my name" || !titled {
-		t.Errorf("custom: %q %v", got, titled)
+	if got != "my name" || titled {
+		t.Errorf("custom: %q %v, want untitled (user-renamed)", got, titled)
 	}
 	got, titled = displayTitle(Meta{AITitle: "Fix malformed JSON in Claude settings ⑂", Title: "prompt"})
 	if got != "Fix malformed JSON in Claude settings" || !titled {
@@ -197,6 +199,80 @@ func TestParseNoHumanTurn(t *testing.T) {
 	m := Parse([]byte(recNoise+"\n"+recAssistant+"\n"), nil)
 	if m.Title != "" || m.AITitle != "" {
 		t.Errorf("want no title for a session with no human turn, got %q/%q", m.Title, m.AITitle)
+	}
+}
+
+func TestParseOriginNullIsHuman(t *testing.T) {
+	// Transcripts from Claude Code ~2.1.156 and earlier have origin:null.
+	line := `{"type":"user","origin":null,"message":{"role":"user","content":"please look at the flaky auth tests"},"cwd":"/repo"}`
+	m := Parse([]byte(line+"\n"+recAITitle+"\n"), nil)
+	if m.Title != "please look at the flaky auth tests" {
+		t.Errorf("Title = %q, want the prompt from an origin-null user record", m.Title)
+	}
+	if m.Cwd != "/repo" {
+		t.Errorf("Cwd = %q", m.Cwd)
+	}
+}
+
+func TestParseOriginAbsentIsHuman(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":"please look at the flaky auth tests"},"cwd":"/repo"}`
+	m := Parse([]byte(line+"\n"), nil)
+	if m.Title != "please look at the flaky auth tests" {
+		t.Errorf("Title = %q, want the prompt from a user record with no origin", m.Title)
+	}
+}
+
+func TestParseTaskNotificationIsNotHuman(t *testing.T) {
+	line := `{"type":"user","origin":{"kind":"task-notification"},"message":{"role":"user","content":"scheduled ping that should not title the row"},"cwd":"/repo"}`
+	m := Parse([]byte(line+"\n"+recAITitle+"\n"), nil)
+	if m.Title != "" {
+		t.Errorf("Title = %q, task-notification must not count as a human prompt", m.Title)
+	}
+	if m.AITitle != "Pod restart investigation" {
+		t.Errorf("AITitle = %q", m.AITitle)
+	}
+}
+
+func TestOneKeepsPreOriginSession(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Join([]string{
+		`{"type":"user","origin":null,"message":{"role":"user","content":"please look at the flaky auth tests"},"cwd":"/repo"}`,
+		recAssistant,
+		recAITitle,
+	}, "\n") + "\n"
+	path := filepath.Join(proj, "old.jsonl")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, ok := one(path)
+	if !ok {
+		t.Fatal("one() dropped a real pre-origin session")
+	}
+	if s.Title != "Pod restart investigation" && s.Title != "please look at the flaky auth tests" {
+		t.Errorf("Title = %q", s.Title)
+	}
+	if s.Cwd != "/repo" {
+		t.Errorf("Cwd = %q", s.Cwd)
+	}
+}
+
+func TestOneDropsTitleOnlyStub(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := recAITitle + "\n" + recAssistant + "\n"
+	path := filepath.Join(proj, "stub.jsonl")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := one(path); ok {
+		t.Fatal("one() kept an ai-title stub with no human prompt")
 	}
 }
 

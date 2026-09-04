@@ -59,6 +59,26 @@ func TestOrderOrphanIsRoot(t *testing.T) {
 	}
 }
 
+func TestOrderLastIsVisuallyLastSibling(t *testing.T) {
+	sessions := []scan.Session{
+		forkSess("p", "c", "p", 0),
+		forkSess("a", "p", "a", time.Hour),
+		forkSess("c", "p", "c", 2*time.Hour),
+		forkSess("b", "p", "b", 3*time.Hour),
+	}
+	got := Order(sessions)
+	for i, n := range got {
+		if n.Depth == 0 {
+			continue
+		}
+		visuallyLast := i == len(got)-1 || got[i+1].Depth < n.Depth
+		if visuallyLast != n.Last {
+			t.Errorf("node %s depth %d Last=%v visuallyLast=%v order=%v",
+				n.Session.ID, n.Depth, n.Last, visuallyLast, nodeIDs(got))
+		}
+	}
+}
+
 func TestOrderBreaksCycles(t *testing.T) {
 	sessions := []scan.Session{
 		forkSess("a", "b", "a", 0),

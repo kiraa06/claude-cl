@@ -55,11 +55,17 @@ func Order(sessions []scan.Session) []Node {
 		emitted[i] = true
 		out = append(out, Node{Session: sessions[i], Depth: depth, Last: last})
 		kids := children[sessions[i].ID]
+		lastWalkable := -1
+		for k, ci := range kids {
+			if !emitted[ci] && !onPath[ci] {
+				lastWalkable = k
+			}
+		}
 		for k, ci := range kids {
 			if emitted[ci] || onPath[ci] {
 				continue
 			}
-			walk(ci, depth+1, k == len(kids)-1)
+			walk(ci, depth+1, k == lastWalkable)
 		}
 		onPath[i] = false
 	}

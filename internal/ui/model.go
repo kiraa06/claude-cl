@@ -417,7 +417,11 @@ func (m Model) launch(mode launch.Mode) (tea.Model, tea.Cmd) {
 		m.status = "directory gone — " + group.Abbreviate(r.session.Cwd)
 		return m, nil
 	}
-	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel(), Tool: m.currentTool()}
+	kind := r.session.Tool
+	if kind == "" {
+		kind = m.currentTool()
+	}
+	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel(), Tool: kind}
 	return m, tea.Quit
 }
 
@@ -470,10 +474,13 @@ func (m *Model) cycleTool() {
 		return
 	}
 	m.tool = next
-	if sessions, err := tool.List(next, m.home); err == nil {
-		m.sessions = sessions
-	} else {
+	sessions, err := tool.List(next, m.home)
+	if err != nil {
 		m.sessions = nil
+		m.status = "could not list " + next + " sessions"
+	} else {
+		m.sessions = sessions
+		m.status = ""
 	}
 	m.models = tool.Models(next, m.home)
 	m.modelIdx = 0

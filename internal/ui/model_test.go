@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -608,5 +609,108 @@ func TestBogusWindowSizeIgnored(t *testing.T) {
 	got := tm.(Model)
 	if got.width != 120 || got.height != 40 {
 		t.Errorf("size = %dx%d, want the last good 120x40", got.width, got.height)
+	}
+}
+
+func TestFramePaneMatchesRequestedWidth(t *testing.T) {
+	applyTheme(themeDark)
+	for _, outer := range []int{60, 98, 140} {
+		out := framePane(strings.Repeat("─", outer-4), outer, 6)
+		var widest int
+		for _, line := range strings.Split(out, "\n") {
+			if w := lipgloss.Width(line); w > widest {
+				widest = w
+			}
+		}
+		if widest != outer {
+			t.Errorf("outer %d rendered %d cells", outer, widest)
+		}
+	}
+}
+
+func TestClampOffsetShrinksWhenWindowGrows(t *testing.T) {
+	var sessions []scan.Session
+	for i := 0; i < 40; i++ {
+		sessions = append(sessions, scan.Session{
+			ID:       fmt.Sprintf("s%d", i),
+			Cwd:      "/repo/backend",
+			Title:    fmt.Sprintf("session number %02d", i),
+			Modified: time.Now().Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	m.rebuild()
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 14})
+	m = press(tm.(Model), "G")
+	if m.offset == 0 {
+		t.Fatal("expected a scrolled offset after jumping to the last row")
+	}
+	old := m.offset
+	tm, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
+	m = tm.(Model)
+	if m.offset >= old {
+		t.Errorf("offset stayed %d after the window grew", m.offset)
+	}
+}
+
+func TestListShowsMoreIndicators(t *testing.T) {
+	var sessions []scan.Session
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, scan.Session{
+			ID:       fmt.Sprintf("s%d", i),
+			Cwd:      "/repo/backend",
+			Title:    fmt.Sprintf("session number %02d", i),
+			Modified: time.Now().Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	m.rebuild()
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 14})
+	m = tm.(Model)
+	out := m.View()
+	if !strings.Contains(out, "↓") || !strings.Contains(out, "more") {
+		t.Fatalf("missing down-more indicator:\n%s", out)
+	}
+	m = press(m, "G")
+	out = m.View()
+	if !strings.Contains(out, "↑") {
+		t.Errorf("missing up-more indicator after scrolling:\n%s", out)
+	}
+}
+
+func TestHighlightTurkishIDoesNotSliceMidRune(t *testing.T) {
+	out := highlight("İstanbul session", []string{"i"}, title, accent)
+	if !strings.Contains(out, "stanbul") {
+		t.Errorf("highlight dropped text: %q", out)
+	}
+}
+
+func TestAgentHintKeepsCopyAndDelete(t *testing.T) {
+	m := testModel(t)
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	out := tm.(Model).View()
+	for _, want := range []string{"y copy id", "d delete", "pgup/pgdn", "t claude/grok"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in hint:\n%s", want, out)
+		}
+	}
+}
+
+func TestToolCycleListErrorSetsStatus(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	m := testModel(t)
+	// home has no .grok/sessions directory, so listing grok fails.
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok"})
+	m = press(m, "t")
+	if m.currentTool() != "grok" {
+		t.Errorf("tool = %q, want grok", m.currentTool())
+	}
+	if m.status == "" {
+		t.Fatal("expected a status error when listing grok sessions fails")
 	}
 }
