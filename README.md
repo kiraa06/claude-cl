@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.svg" alt="cl listing Claude Code sessions grouped by directory, with a preview pane" width="100%">
+  <img src="docs/demo.jpg" alt="cl listing sessions in HERE and ALL PROJECTS, with forks nested, path/age/model columns, and a preview pane" width="100%">
 </p>
 
 `claude` always starts fresh. `cl` shows you what you were already working on —
@@ -53,7 +53,7 @@ Or grab a binary from the [releases page](https://github.com/kiraa06/claude-cl/r
 ### Requirements
 
 - At least one of [Claude Code](https://claude.com/claude-code),
-  [Grok](https://github.com/xai-org/grok-cli), or
+  [Grok](https://x.ai/cli), or
   [Codex](https://github.com/openai/codex) on your `PATH`
 - Go 1.26+ only if you build it yourself
 
@@ -128,7 +128,7 @@ dark terminal. The choice is stored in `~/.config/cl/theme`.
 ### Finds things
 
 <p align="center">
-  <img src="docs/search.svg" alt="Searching for heap narrows 130 sessions to the two that are about heap" width="100%">
+  <img src="docs/search.jpg" alt="Searching for fast narrows the list to the matching session, with the query highlighted in the title" width="100%">
 </p>
 
 Search covers titles, directories, branches and models. Every term has to

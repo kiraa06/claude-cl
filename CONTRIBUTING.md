@@ -58,8 +58,9 @@ go test ./internal/scan -bench BenchmarkLiveScan      # scan speed on your store
 
 ## Regenerating the README images
 
-They are real renders, not mock-ups — but they render a *synthetic* store, so
-they contain nothing from your own sessions and come out the same for everyone:
+The README hero shots (`docs/demo.jpg`, `docs/search.jpg`) are screenshots of
+the live picker. The SVG pipeline is still there if you want a synthetic
+store with nothing from your own sessions:
 
 ```sh
 sh docs/tools/make_images.sh
