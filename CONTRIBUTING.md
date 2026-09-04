@@ -58,7 +58,7 @@ go test ./internal/scan -bench BenchmarkLiveScan      # scan speed on your store
 
 ## Regenerating the README images
 
-The README hero shots (`docs/demo.jpg`, `docs/search.jpg`) are screenshots of
+The README hero shots (`docs/demo.png`, `docs/search.png`) are screenshots of
 the live picker. The SVG pipeline is still there if you want a synthetic
 store with nothing from your own sessions:
 

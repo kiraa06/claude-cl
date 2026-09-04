@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.jpg" alt="cl listing sessions in HERE and ALL PROJECTS, with forks nested, path/age/model columns, and a preview pane" width="100%">
+  <img src="docs/demo.png" alt="cl listing sessions in HERE and ALL PROJECTS, with forks nested, path/age/model columns, and a preview pane" width="100%">
 </p>
 
 `claude` always starts fresh. `cl` shows you what you were already working on —
@@ -62,6 +62,7 @@ Or grab a binary from the [releases page](https://github.com/kiraa06/claude-cl/r
 ```sh
 cl              # open the picker (Claude by default)
 cl kafka        # open it filtered to "kafka"
+cl --claude     # Claude sessions for this run
 cl --grok       # Grok sessions for this run
 cl --codex      # Codex sessions for this run
 ```
@@ -110,8 +111,9 @@ stack trace. Scheduled runs are titled by their task name.
 ### Remembers which model a conversation was using
 
 The footer follows the highlighted row, so resuming a Sonnet conversation
-resumes it on Sonnet. `New session` uses the `model` from your
-`~/.claude/settings.json`. Press `←` `→` to override, and it stays put.
+resumes it on Sonnet. For Claude, `New session` uses the `model` from
+`~/.claude/settings.json`; Grok reads `~/.grok/config.toml` and Codex
+reads `~/.codex/config.toml`. Press `←` `→` to override, and it stays put.
 
 ### Other tools
 
@@ -119,7 +121,8 @@ If `grok` or `codex` is on your PATH as well, press `t` to cycle
 **claude / grok / codex**. The current agent is labelled in the list pane
 (`agent grok`). The switcher is omitted when only one of those CLIs is
 installed. Default is Claude; the last choice is remembered in
-`~/.config/cl/tool`. You can also pass `--grok` or `--codex` for one run.
+`~/.config/cl/tool`. You can also pass `--claude`, `--grok`, or
+`--codex` for one run.
 
 `T` switches **dark / light**. Dark is the original foreground-only palette.
 Light paints a white canvas (including every cell) so it stays readable on a
@@ -128,7 +131,7 @@ dark terminal. The choice is stored in `~/.config/cl/theme`.
 ### Finds things
 
 <p align="center">
-  <img src="docs/search.jpg" alt="Searching for fast narrows the list to the matching session, with the query highlighted in the title" width="100%">
+  <img src="docs/search.png" alt="Searching for fast narrows the list to the matching session, with the query highlighted in the title" width="100%">
 </p>
 
 Search covers titles, directories, branches and models. Every term has to
@@ -190,6 +193,8 @@ to the directory the conversation was happening in.
 
 ```sh
 rm ~/.local/bin/cl
+# or, if you installed with Go:
+rm "$(go env GOPATH)/bin/cl"
 ```
 
 `cl` remembers the last agent and theme in `~/.config/cl/` (`tool`, `theme`).
