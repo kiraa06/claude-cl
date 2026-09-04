@@ -9,6 +9,7 @@ import (
 	"github.com/kiraa06/claude-cl/internal/group"
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
+	"github.com/kiraa06/claude-cl/internal/tool"
 )
 
 // allCap bounds the global section; the rest stay reachable through search.
@@ -19,6 +20,7 @@ type Choice struct {
 	Mode    launch.Mode
 	Session scan.Session
 	Model   string
+	Tool    string
 }
 
 // rowKind distinguishes the flattened list's entries.
@@ -39,6 +41,10 @@ type row struct {
 	text    string
 	section group.Kind
 	session scan.Session
+	depth   int
+	last    bool
+	count   int  // header: sessions in this section
+	context bool // ancestor shown so a matching fork keeps its parent
 }
 
 func (r row) selectable() bool { return r.kind == rowNew || r.kind == rowSession }
@@ -49,6 +55,9 @@ type Model struct {
 	cwd       string
 	repoRoot  string
 	claudeDir string
+	home      string
+	tool      string
+	tools     []string // detected tool names; switcher hidden unless len>=2
 
 	rows   []row
 	cursor int
@@ -66,6 +75,7 @@ type Model struct {
 	showPreview bool
 	confirming  bool
 	status      string
+	theme       string // "dark" or "light"
 
 	width, height int
 
@@ -83,9 +93,11 @@ func New(sessions []scan.Session, cwd, claudeDir string, models []string) Model 
 		claudeDir:   claudeDir,
 		models:      models,
 		showPreview: true,
+		theme:       loadTheme(),
 		width:       100,
 		height:      30,
 	}
+	applyTheme(m.theme)
 	m.rebuild()
 	m.syncModelToCursor()
 	return m
@@ -95,17 +107,35 @@ func New(sessions []scan.Session, cwd, claudeDir string, models []string) Model 
 // cursor on a selectable row.
 func (m *Model) rebuild() {
 	visible := scan.Filter(m.sessions, m.query)
+	matchedIDs := make(map[string]bool, len(visible))
+	for _, s := range visible {
+		matchedIDs[s.ID] = true
+	}
+	if m.query != "" {
+		visible = scan.WithAncestors(m.sessions, visible)
+	}
 	sections := group.Build(visible, m.cwd, m.repoRoot, allCap)
 
 	rows := make([]row, 0, len(visible)+len(sections)+2)
 	for _, sec := range sections {
+		hdr := len(rows)
 		rows = append(rows, row{kind: rowHeader, text: sec.Label(), section: sec.Kind})
 		if sec.Kind == group.KindCwd {
 			rows = append(rows, row{kind: rowNew, text: "New session", section: sec.Kind})
 		}
-		for _, s := range sec.Sessions {
-			rows = append(rows, row{kind: rowSession, session: s, section: sec.Kind})
+		nSess := 0
+		for _, n := range group.Order(sec.Sessions) {
+			nSess++
+			rows = append(rows, row{
+				kind:    rowSession,
+				session: n.Session,
+				section: sec.Kind,
+				depth:   n.Depth,
+				last:    n.Last,
+				context: m.query != "" && !matchedIDs[n.Session.ID],
+			})
 		}
+		rows[hdr].count = nSess
 		if sec.Hidden > 0 {
 			rows = append(rows, row{
 				kind:    rowNote,
@@ -152,6 +182,18 @@ func (m *Model) move(delta int) {
 	}
 }
 
+// movePage jumps roughly one screen of selectable rows.
+func (m *Model) movePage(dir int) {
+	steps := max(m.listHeight()-2, 1)
+	for range steps {
+		prev := m.cursor
+		m.move(dir)
+		if m.cursor == prev {
+			return
+		}
+	}
+}
+
 // syncModelToCursor points the footer at the highlighted session's own model,
 // so resuming keeps the model the conversation was using. An explicit choice by
 // the user takes precedence.
@@ -162,6 +204,10 @@ func (m *Model) syncModelToCursor() {
 	r := m.rows[m.cursor]
 	if r.kind != rowSession {
 		m.modelIdx = 0 // a new session uses the configured default
+		return
+	}
+	if i := launch.IndexOf(m.models, r.session.Model); i >= 0 {
+		m.modelIdx = i
 		return
 	}
 	if alias := launch.Alias(r.session.Model); alias != "" {
@@ -232,7 +278,7 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok || r.kind != rowSession {
 			return m, nil
 		}
-		dest, err := scan.Trash(m.claudeDir, r.session)
+		dest, err := scan.Trash(m.storeDir(), r.session)
 		if err != nil {
 			m.status = "could not delete: " + err.Error()
 			return m, nil
@@ -300,6 +346,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(-1)
 	case "down", "j", "ctrl+n":
 		m.move(1)
+	case "pgdown", "ctrl+d", "ctrl+f":
+		m.movePage(1)
+	case "pgup", "ctrl+b", "ctrl+u":
+		m.movePage(-1)
 	case "left", "h", "shift+tab":
 		m.cycleModel(-1)
 	case "right", "l", "tab":
@@ -321,6 +371,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching, m.status = true, ""
 	case "p":
 		m.showPreview = !m.showPreview
+	case "t":
+		if len(m.tools) >= 2 {
+			m.cycleTool()
+		}
+	case "T":
+		m.cycleTheme()
 	case "enter":
 		return m.launch(launch.Resume)
 	case "f":
@@ -333,6 +389,16 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirming = true
 		} else {
 			m.status = "nothing to delete"
+		}
+	case "y":
+		if r, ok := m.current(); ok && r.kind == rowSession {
+			if err := copyText(r.session.ID); err != nil {
+				m.status = "could not copy id"
+			} else {
+				m.status = "copied " + r.session.ID
+			}
+		} else {
+			m.status = "nothing to copy"
 		}
 	}
 	return m, nil
@@ -347,8 +413,15 @@ func (m Model) launch(mode launch.Mode) (tea.Model, tea.Cmd) {
 	}
 	if r.kind == rowNew {
 		mode = launch.New
+	} else if r.session.Missing {
+		m.status = "directory gone — " + group.Abbreviate(r.session.Cwd)
+		return m, nil
 	}
-	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel()}
+	kind := r.session.Tool
+	if kind == "" {
+		kind = m.currentTool()
+	}
+	m.Choice = &Choice{Mode: mode, Session: r.session, Model: m.currentModel(), Tool: kind}
 	return m, tea.Quit
 }
 
@@ -371,4 +444,70 @@ func (m *Model) SetQuery(q string) {
 	m.searching = true
 	m.rebuild()
 	m.syncModelToCursor()
+}
+
+// AttachTools wires detected backends. The switcher stays hidden unless at
+// least two tools are present.
+func (m *Model) AttachTools(home, current string, names []string) {
+	m.home = home
+	m.tool = current
+	m.tools = names
+}
+
+func (m Model) currentTool() string {
+	if m.tool != "" {
+		return m.tool
+	}
+	return tool.Claude
+}
+
+func (m Model) storeDir() string {
+	if m.home != "" {
+		return tool.StoreDir(m.currentTool(), m.home)
+	}
+	return m.claudeDir
+}
+
+func (m *Model) cycleTool() {
+	next := tool.Next(detectedFromNames(m.tools), m.currentTool())
+	if next == m.currentTool() {
+		return
+	}
+	m.tool = next
+	sessions, err := tool.List(next, m.home)
+	if err != nil {
+		m.sessions = nil
+		m.status = "could not list " + next + " sessions"
+	} else {
+		m.sessions = sessions
+		m.status = ""
+	}
+	m.models = tool.Models(next, m.home)
+	m.modelIdx = 0
+	m.modelPinned = false
+	m.cursor = 0
+	m.offset = 0
+	m.query = ""
+	m.searching = false
+	tool.SavePreferred(next)
+	m.rebuild()
+	m.syncModelToCursor()
+}
+
+func (m *Model) cycleTheme() {
+	if m.theme == themeLight {
+		m.theme = themeDark
+	} else {
+		m.theme = themeLight
+	}
+	applyTheme(m.theme)
+	saveTheme(m.theme)
+}
+
+func detectedFromNames(names []string) []tool.Detected {
+	out := make([]tool.Detected, 0, len(names))
+	for _, n := range names {
+		out = append(out, tool.Detected{Kind: n})
+	}
+	return out
 }

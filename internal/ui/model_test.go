@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
@@ -53,6 +56,8 @@ func testModel(t *testing.T) Model {
 	}
 	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus[1m]", "opus", "sonnet", "haiku", "fable"})
 	m.repoRoot = "/repo" // set directly; the test dirs are not real repositories
+	m.theme = themeDark
+	applyTheme(themeDark)
 	m.rebuild()
 	m.cursor = m.firstSelectable()
 	return m
@@ -155,6 +160,34 @@ func TestModelCyclingWraps(t *testing.T) {
 	}
 	if got := press(testModel(t), "left").currentModel(); got != m.models[n-1] {
 		t.Errorf("left from the first model = %q, want %q", got, m.models[n-1])
+	}
+}
+
+func TestMissingDirectoryRefusesLaunch(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "gone", Cwd: "/no/such/dir", Title: "old tmp project", Missing: true,
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m = press(m, "down", "enter")
+	if m.Choice != nil {
+		t.Fatal("resumed a session whose directory is gone")
+	}
+	if m.status == "" {
+		t.Error("want an explanation when the directory is gone")
+	}
+}
+
+func TestYankCopiesSessionID(t *testing.T) {
+	m := press(testModel(t), "y")
+	if m.status == "" && m.Choice != nil {
+		t.Fatal("yank on New session should not launch")
+	}
+	m = press(testModel(t), "down", "y")
+	if !strings.Contains(m.status, "copied") && !strings.Contains(m.status, "could not copy") {
+		t.Errorf("status = %q, want a copy result", m.status)
+	}
+	if m.Choice != nil {
+		t.Fatal("yank must not launch")
 	}
 }
 
@@ -306,14 +339,231 @@ func TestEmptyStoreStillOffersNewSession(t *testing.T) {
 	}
 }
 
+func TestAITitleDotStaysInTitleColumn(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "h1", Cwd: "/repo/backend", Title: "short title", AITitled: true,
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "short title") || !strings.Contains(out, "·") {
+		t.Fatalf("missing title or dot:\n%s", out)
+	}
+	// The AI-title mark must not sit in its own gutter before Path.
+	if strings.Contains(out, "· │") || strings.Contains(out, "·│") {
+		t.Errorf("title mark leaked into the Path gutter:\n%s", out)
+	}
+}
+
+func TestColumnHeaderFitsOnOneLine(t *testing.T) {
+	m := testModel(t)
+	m.theme = themeLight
+	applyTheme(themeLight)
+	inner := 80
+	hdr := m.renderColumnHeader(inner)
+	if strings.Contains(hdr, "\n") {
+		t.Fatalf("header wrapped:\n%s", hdr)
+	}
+	if lipgloss.Width(hdr) > inner {
+		t.Errorf("header is %d cells, inner is %d", lipgloss.Width(hdr), inner)
+	}
+}
+
+func TestViewHasColumnHeader(t *testing.T) {
+	m := testModel(t)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "Title") || !strings.Contains(out, "│") {
+		t.Errorf("missing column header:\n%s", out)
+	}
+	if !strings.Contains(out, "Age") || !strings.Contains(out, "Model") {
+		t.Errorf("missing Age/Model columns:\n%s", out)
+	}
+}
+
+func TestToolCycleReloadsSessions(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	home := t.TempDir()
+	dir := filepath.Join(home, ".grok", "sessions", "%2Frepo", "g1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := `{"generated_title":"grok session","info":{"id":"g1","cwd":"/repo"},"updated_at":"2026-09-04T01:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "summary.json"), []byte(sum), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := testModel(t)
+	m.AttachTools(home, "claude", []string{"claude", "grok"})
+	m = press(m, "t")
+	if m.currentTool() != "grok" {
+		t.Errorf("tool = %q, want grok", m.currentTool())
+	}
+	var ids []string
+	for _, r := range m.rows {
+		if r.kind == rowSession {
+			ids = append(ids, r.session.ID)
+		}
+	}
+	if len(ids) != 1 || ids[0] != "g1" {
+		t.Errorf("after cycle, sessions = %v, want g1", ids)
+	}
+}
+
+func TestToolKeyHiddenWithOneBackend(t *testing.T) {
+	m := press(testModel(t), "t")
+	if m.currentTool() != "claude" {
+		t.Errorf("single-tool picker cycled to %q", m.currentTool())
+	}
+}
+
+func TestViewWrapsLongTitle(t *testing.T) {
+	m := New([]scan.Session{{
+		ID: "long", Cwd: "/repo/backend",
+		Title:    "Nessus Windows to Linux migration inventory for the whole fleet",
+		Modified: time.Now(),
+	}}, "/repo/backend", t.TempDir(), []string{"opus"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "Nessus Windows to Linux") {
+		t.Fatalf("missing title start:\n%s", out)
+	}
+	if !strings.Contains(out, "inventory") {
+		t.Errorf("title was clipped instead of wrapping:\n%s", out)
+	}
+}
+
+func TestSearchKeepsParentOfMatchingFork(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "original nessus work", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked inventory pass", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m = press(m, "/", "i", "n", "v", "e", "n")
+	var ids []string
+	var depths []int
+	for _, r := range m.rows {
+		if r.kind == rowSession {
+			ids = append(ids, r.session.ID)
+			depths = append(depths, r.depth)
+		}
+	}
+	if len(ids) != 2 || ids[0] != "parent" || ids[1] != "child" {
+		t.Errorf("rows = %v, want parent then child", ids)
+	}
+	if len(depths) == 2 && (depths[0] != 0 || depths[1] != 1) {
+		t.Errorf("depths = %v, want 0 then 1", depths)
+	}
+}
+
+func TestViewNestsForkUnderParent(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "main chat", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked chat", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	out := m.View()
+	if !strings.Contains(out, "└─ ") && !strings.Contains(out, "├─ ") {
+		t.Errorf("fork was not nested under parent:\n%s", out)
+	}
+	parentAt := strings.Index(out, "main chat")
+	childAt := strings.Index(out, "forked chat")
+	if parentAt < 0 || childAt < 0 || childAt < parentAt {
+		t.Errorf("child should render after parent:\n%s", out)
+	}
+}
+
 func TestViewRendersWithoutPanicAtManySizes(t *testing.T) {
-	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}}
+	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}, {60, 12}, {100, 18}}
 	for _, sz := range sizes {
 		m := testModel(t)
 		tm, _ := m.Update(tea.WindowSizeMsg{Width: sz.w, Height: sz.h})
-		if out := tm.(Model).View(); out == "" {
+		out := tm.(Model).View()
+		if out == "" {
 			t.Errorf("empty render at %dx%d", sz.w, sz.h)
+			continue
 		}
+		lines := strings.Split(out, "\n")
+		if len(lines) > sz.h {
+			t.Errorf("%dx%d rendered %d lines", sz.w, sz.h, len(lines))
+		}
+		for i, line := range lines {
+			if lipgloss.Width(line) > sz.w {
+				t.Errorf("%dx%d line %d is %d cells: %q", sz.w, sz.h, i, lipgloss.Width(line), line)
+				break
+			}
+		}
+	}
+}
+
+func TestViewDoesNotOverflowWidth(t *testing.T) {
+	for _, theme := range []string{themeDark, themeLight} {
+		m := testModel(t)
+		m.theme = theme
+		applyTheme(theme)
+		tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+		out := tm.(Model).View()
+		for i, line := range strings.Split(out, "\n") {
+			if lipgloss.Width(line) > 140 {
+				t.Errorf("theme %s line %d is %d cells (want <= 140)", theme, i, lipgloss.Width(line))
+				break
+			}
+		}
+	}
+}
+
+func TestViewReflowsOnResize(t *testing.T) {
+	m := testModel(t)
+	wide, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	wideOut := wide.(Model).View()
+	if !strings.Contains(wideOut, "Path") {
+		t.Fatalf("wide view missing Path column:\n%s", wideOut)
+	}
+	narrow, _ := wide.(Model).Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+	got := narrow.(Model)
+	if got.width != 50 || got.height != 12 {
+		t.Errorf("size = %dx%d after resize", got.width, got.height)
+	}
+	out := got.View()
+	if strings.Count(out, "\n")+1 > 12 {
+		t.Errorf("narrow view is %d lines, want <= 12", strings.Count(out, "\n")+1)
+	}
+}
+
+func TestThemeToggleDarkLight(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	t.Setenv("CL_THEME", "")
+	m := testModel(t)
+	m.theme = themeDark
+	applyTheme(m.theme)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = tm.(Model)
+	if !strings.Contains(m.View(), "theme dark") {
+		t.Fatalf("want theme dark label:\n%s", m.View())
+	}
+	m = press(m, "T")
+	if m.theme != themeLight {
+		t.Errorf("theme = %q, want light", m.theme)
+	}
+	out := m.View()
+	if !strings.Contains(out, "theme light") {
+		t.Errorf("want theme light label:\n%s", out)
+	}
+	if !strings.Contains(out, "T dark/light") {
+		t.Errorf("hint should name dark/light:\n%s", out)
+	}
+}
+
+func TestAgentCycleHintNamesTheAgents(t *testing.T) {
+	m := testModel(t)
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok", "codex"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "t claude/grok/codex") {
+		t.Errorf("hint should name the agents:\n%s", out)
+	}
+	if !strings.Contains(out, "agent") || !strings.Contains(out, "claude") {
+		t.Errorf("pane should label the current agent:\n%s", out)
 	}
 }
 
@@ -359,5 +609,108 @@ func TestBogusWindowSizeIgnored(t *testing.T) {
 	got := tm.(Model)
 	if got.width != 120 || got.height != 40 {
 		t.Errorf("size = %dx%d, want the last good 120x40", got.width, got.height)
+	}
+}
+
+func TestFramePaneMatchesRequestedWidth(t *testing.T) {
+	applyTheme(themeDark)
+	for _, outer := range []int{60, 98, 140} {
+		out := framePane(strings.Repeat("─", outer-4), outer, 6)
+		var widest int
+		for _, line := range strings.Split(out, "\n") {
+			if w := lipgloss.Width(line); w > widest {
+				widest = w
+			}
+		}
+		if widest != outer {
+			t.Errorf("outer %d rendered %d cells", outer, widest)
+		}
+	}
+}
+
+func TestClampOffsetShrinksWhenWindowGrows(t *testing.T) {
+	var sessions []scan.Session
+	for i := 0; i < 40; i++ {
+		sessions = append(sessions, scan.Session{
+			ID:       fmt.Sprintf("s%d", i),
+			Cwd:      "/repo/backend",
+			Title:    fmt.Sprintf("session number %02d", i),
+			Modified: time.Now().Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	m.rebuild()
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 14})
+	m = press(tm.(Model), "G")
+	if m.offset == 0 {
+		t.Fatal("expected a scrolled offset after jumping to the last row")
+	}
+	old := m.offset
+	tm, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 60})
+	m = tm.(Model)
+	if m.offset >= old {
+		t.Errorf("offset stayed %d after the window grew", m.offset)
+	}
+}
+
+func TestListShowsMoreIndicators(t *testing.T) {
+	var sessions []scan.Session
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, scan.Session{
+			ID:       fmt.Sprintf("s%d", i),
+			Cwd:      "/repo/backend",
+			Title:    fmt.Sprintf("session number %02d", i),
+			Modified: time.Now().Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	m := New(sessions, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	m.rebuild()
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 14})
+	m = tm.(Model)
+	out := m.View()
+	if !strings.Contains(out, "↓") || !strings.Contains(out, "more") {
+		t.Fatalf("missing down-more indicator:\n%s", out)
+	}
+	m = press(m, "G")
+	out = m.View()
+	if !strings.Contains(out, "↑") {
+		t.Errorf("missing up-more indicator after scrolling:\n%s", out)
+	}
+}
+
+func TestHighlightTurkishIDoesNotSliceMidRune(t *testing.T) {
+	out := highlight("İstanbul session", []string{"i"}, title, accent)
+	if !strings.Contains(out, "stanbul") {
+		t.Errorf("highlight dropped text: %q", out)
+	}
+}
+
+func TestAgentHintKeepsCopyAndDelete(t *testing.T) {
+	m := testModel(t)
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	out := tm.(Model).View()
+	for _, want := range []string{"y copy id", "d delete", "pgup/pgdn", "t claude/grok"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in hint:\n%s", want, out)
+		}
+	}
+}
+
+func TestToolCycleListErrorSetsStatus(t *testing.T) {
+	t.Setenv("CL_CONFIG_DIR", t.TempDir())
+	m := testModel(t)
+	// home has no .grok/sessions directory, so listing grok fails.
+	m.AttachTools(t.TempDir(), "claude", []string{"claude", "grok"})
+	m = press(m, "t")
+	if m.currentTool() != "grok" {
+		t.Errorf("tool = %q, want grok", m.currentTool())
+	}
+	if m.status == "" {
+		t.Fatal("expected a status error when listing grok sessions fails")
 	}
 }

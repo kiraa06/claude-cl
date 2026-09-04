@@ -79,6 +79,24 @@ func TestBuildDoesNotLeakSiblingDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildCapKeepsForksWithParent(t *testing.T) {
+	sessions := []scan.Session{
+		{ID: "p1", Cwd: "/elsewhere", Title: "p1"},
+		{ID: "c1", Cwd: "/elsewhere", Title: "c1", ParentID: "p1"},
+		{ID: "p2", Cwd: "/elsewhere", Title: "p2"},
+		{ID: "c2", Cwd: "/elsewhere", Title: "c2", ParentID: "p2"},
+		{ID: "p3", Cwd: "/elsewhere", Title: "p3"},
+	}
+	got := Build(sessions, "/repo", "", 2)
+	all := got[len(got)-1]
+	if want := []string{"p1", "c1", "p2", "c2"}; !equal(titles(all.Sessions), want) {
+		t.Errorf("ALL = %v, want parent trees kept together, got hidden=%d", titles(all.Sessions), all.Hidden)
+	}
+	if all.Hidden != 1 {
+		t.Errorf("hidden = %d, want 1", all.Hidden)
+	}
+}
+
 func TestBuildCapsGlobalSection(t *testing.T) {
 	var sessions []scan.Session
 	for i := range 10 {

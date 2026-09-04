@@ -38,6 +38,24 @@ func TestBuildFork(t *testing.T) {
 	}
 }
 
+func TestBuildForGrokAndCodex(t *testing.T) {
+	g := BuildFor("grok", "/bin/grok", Fork, "sid", "/repo", "/now", "grok-4.6")
+	wantG := []string{"/bin/grok", "--resume", "sid", "--fork-session", "-m", "grok-4.6"}
+	if !equalArgs(g.Args, wantG) {
+		t.Errorf("grok fork = %v, want %v", g.Args, wantG)
+	}
+	c := BuildFor("codex", "/bin/codex", Resume, "sid", "/repo", "/now", "gpt-5")
+	wantC := []string{"/bin/codex", "resume", "sid", "-c", "model=gpt-5"}
+	if !equalArgs(c.Args, wantC) {
+		t.Errorf("codex resume = %v, want %v", c.Args, wantC)
+	}
+	f := BuildFor("codex", "/bin/codex", Fork, "sid", "/repo", "/now", "")
+	wantF := []string{"/bin/codex", "fork", "sid"}
+	if !equalArgs(f.Args, wantF) {
+		t.Errorf("codex fork = %v, want %v", f.Args, wantF)
+	}
+}
+
 func TestBuildOmitsEmptyModel(t *testing.T) {
 	got := Build("/bin/claude", New, "", "", "/now", "")
 	if len(got.Args) != 1 {

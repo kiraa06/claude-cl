@@ -26,9 +26,20 @@ func Trash(claudeDir string, s Session) (string, error) {
 	// Namespace by project directory so identically named files from different
 	// projects cannot collide in the trash.
 	project := filepath.Base(filepath.Dir(s.Path))
-	target := filepath.Join(dest, project+"__"+filepath.Base(s.Path))
+	fi, err := os.Lstat(s.Path)
+	if err != nil {
+		return "", err
+	}
+	name := project + "__" + filepath.Base(s.Path)
+	if fi.IsDir() {
+		name = project + "__" + s.ID
+	}
+	target := filepath.Join(dest, name)
 	if err := os.Rename(s.Path, target); err != nil {
 		return "", err
+	}
+	if fi.IsDir() {
+		return target, nil
 	}
 
 	// Subagent transcripts live in a sibling directory named for the session.

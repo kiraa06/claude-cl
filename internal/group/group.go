@@ -97,8 +97,8 @@ func Build(sessions []scan.Session, cwd, repoRoot string, allCap int) []Section 
 	}
 	if len(all) > 0 {
 		sec := Section{Kind: KindAll, Sessions: all}
-		if allCap > 0 && len(all) > allCap {
-			sec.Sessions, sec.Hidden = all[:allCap], len(all)-allCap
+		if allCap > 0 {
+			sec.Sessions, sec.Hidden = CapRoots(all, allCap)
 		}
 		sections = append(sections, sec)
 	}
