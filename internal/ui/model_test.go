@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
@@ -655,6 +656,43 @@ func TestFramePaneMatchesRequestedWidth(t *testing.T) {
 		if widest != outer {
 			t.Errorf("outer %d rendered %d cells", outer, widest)
 		}
+	}
+}
+
+func TestLightFramePanePaintsShortRows(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	applyTheme(themeLight)
+	out := framePane("short", 60, 8)
+	if !strings.Contains(out, "48;5;255") {
+		t.Fatal("light pane padding must use the white canvas background")
+	}
+	if i := strings.Index(out, "\x1b[0m   "); i >= 0 {
+		end := i + 40
+		if end > len(out) {
+			end = len(out)
+		}
+		t.Fatalf("unstyled spaces after reset (black ribbon):\n%q", out[i:end])
+	}
+}
+
+func TestLightThemeDoesNotLeaveBlackRibbons(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := testModel(t)
+	m.theme = themeLight
+	applyTheme(themeLight)
+	m.AttachTools(t.TempDir(), "codex", []string{"claude", "grok", "codex"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 24})
+	out := tm.(Model).View()
+	if i := strings.Index(out, "\x1b[0m   "); i >= 0 {
+		start := i - 30
+		if start < 0 {
+			start = 0
+		}
+		end := i + 40
+		if end > len(out) {
+			end = len(out)
+		}
+		t.Fatalf("light theme left unstyled spaces after a reset (black ribbon):\n%q", out[start:end])
 	}
 }
 
