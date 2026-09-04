@@ -31,7 +31,8 @@ const (
 	ageColumn    = 5
 	modelColumn  = 8
 	pathColumn   = 24
-	titleLines   = 2 // word-wrap budget for a session title
+	titleLines   = 2    // word-wrap budget for a session title
+	forkMark     = " ⎇" // suffix on nested forks/clones; tree prefix stays
 )
 
 func (m Model) footerLines() int {
@@ -164,7 +165,8 @@ func framePane(content string, outerW, outerH int) string {
 	clipped := lipgloss.NewStyle().
 		Width(innerW).MaxWidth(innerW).
 		MaxHeight(innerH).
-		Render(content)
+		Background(canvasBg).
+		Render(padLines(content, innerW))
 	return paneBorder.
 		Width(max(outerW-2, 1)).MaxWidth(outerW).
 		Height(innerH).MaxHeight(outerH).
@@ -204,7 +206,7 @@ func (m Model) renderTitleBar(width int) string {
 		left += dim.Render("  agent ") + accent.Render(m.currentTool())
 	}
 	left += dim.Render("  theme ") + accent.Render(m.themeName())
-	return left
+	return pad(left, width)
 }
 
 func (m Model) themeName() string {
@@ -222,19 +224,19 @@ func (m Model) renderColumnHeader(width int) string {
 	}
 	title += faint.Render(" │ ") + dim.Render(pad("Age", ageColumn))
 	title += faint.Render(" │ ") + dim.Render(pad("Model", modelColumn))
-	return title
+	return pad(title, width)
 }
 
 func (m Model) renderList(width int) string {
 	if len(m.rows) == 0 {
-		return faint.Render("  no sessions")
+		return pad(faint.Render("  no sessions"), width)
 	}
 	h := m.listHeight()
 
 	var b strings.Builder
 	used := 0
 	if m.offset > 0 {
-		b.WriteString(faint.Render(fmt.Sprintf("  ↑ %d more", m.offset)))
+		b.WriteString(pad(faint.Render(fmt.Sprintf("  ↑ %d more", m.offset)), width))
 		b.WriteByte('\n')
 		used++
 	}
@@ -254,7 +256,7 @@ func (m Model) renderList(width int) string {
 		end = i + 1
 	}
 	if end < len(m.rows) {
-		b.WriteString(faint.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)))
+		b.WriteString(pad(faint.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)), width))
 	}
 	return b.String()
 }
@@ -268,11 +270,11 @@ func (m Model) renderRow(i, width int) string {
 			line += dim.Render(fmt.Sprintf("  %d", r.count))
 		}
 		if i > 0 {
-			return "\n" + line
+			return "\n" + pad(line, width)
 		}
-		return line
+		return pad(line, width)
 	case rowNote:
-		return faint.Render("    " + r.text)
+		return pad(faint.Render("    "+r.text), width)
 	case rowNew:
 		return m.renderNewRow(i, width)
 	default:
@@ -312,6 +314,9 @@ func (m Model) renderSessionRow(i, width int) string {
 	painted := m.paintTitle(lines[0], sel, r.context)
 	if s.AITitled {
 		painted += aiMark.Render(" ·")
+	}
+	if s.ParentID != "" {
+		painted += faint.Render(forkMark)
 	}
 	name := pad(painted, inner)
 	var title string
@@ -369,8 +374,15 @@ func (m Model) titleWidth(i, width int) int {
 	tw, _ := m.titleColWidth(width)
 	cursor, tree := m.sessionPrefix(i)
 	inner := max(tw-lipgloss.Width(cursor+tree), 8)
-	if i < len(m.rows) && m.rows[i].session.AITitled {
+	if i < 0 || i >= len(m.rows) {
+		return inner
+	}
+	s := m.rows[i].session
+	if s.AITitled {
 		inner = max(inner-2, 8)
+	}
+	if s.ParentID != "" {
+		inner = max(inner-lipgloss.Width(forkMark), 8)
 	}
 	return inner
 }
@@ -657,6 +669,14 @@ func pad(s string, width int) string {
 		return s + fill(gap)
 	}
 	return s
+}
+
+func padLines(s string, width int) string {
+	parts := strings.Split(s, "\n")
+	for i, p := range parts {
+		parts[i] = pad(p, width)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // wrap breaks text into lines of at most width.

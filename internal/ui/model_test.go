@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/kiraa06/claude-cl/internal/launch"
 	"github.com/kiraa06/claude-cl/internal/scan"
@@ -473,6 +474,36 @@ func TestViewNestsForkUnderParent(t *testing.T) {
 	}
 }
 
+func TestForkMarkAtEndOfNestedTitle(t *testing.T) {
+	m := New([]scan.Session{
+		{ID: "parent", Cwd: "/repo/backend", Title: "main chat", Modified: time.Now()},
+		{ID: "child", Cwd: "/repo/backend", Title: "forked chat", ParentID: "parent", Modified: time.Now().Add(-time.Hour)},
+	}, "/repo/backend", t.TempDir(), []string{"opus"})
+	m.theme = themeDark
+	applyTheme(themeDark)
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	out := tm.(Model).View()
+	if !strings.Contains(out, "└─ ") && !strings.Contains(out, "├─ ") {
+		t.Fatalf("tree prefix missing:\n%s", out)
+	}
+	if !strings.Contains(out, "⎇") {
+		t.Fatalf("missing fork mark at end of nested row:\n%s", out)
+	}
+	if strings.Contains(out, "⎇ │") || strings.Contains(out, "⎇│") {
+		t.Errorf("fork mark leaked into the Path gutter:\n%s", out)
+	}
+	parentLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "main chat") {
+			parentLine = line
+			break
+		}
+	}
+	if strings.Contains(parentLine, "⎇") {
+		t.Errorf("root row should not carry the fork mark:\n%s", parentLine)
+	}
+}
+
 func TestViewRendersWithoutPanicAtManySizes(t *testing.T) {
 	sizes := []struct{ w, h int }{{40, 10}, {80, 24}, {120, 40}, {200, 60}, {20, 5}, {60, 12}, {100, 18}}
 	for _, sz := range sizes {
@@ -625,6 +656,43 @@ func TestFramePaneMatchesRequestedWidth(t *testing.T) {
 		if widest != outer {
 			t.Errorf("outer %d rendered %d cells", outer, widest)
 		}
+	}
+}
+
+func TestLightFramePanePaintsShortRows(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	applyTheme(themeLight)
+	out := framePane("short", 60, 8)
+	if !strings.Contains(out, "48;5;255") {
+		t.Fatal("light pane padding must use the white canvas background")
+	}
+	if i := strings.Index(out, "\x1b[0m   "); i >= 0 {
+		end := i + 40
+		if end > len(out) {
+			end = len(out)
+		}
+		t.Fatalf("unstyled spaces after reset (black ribbon):\n%q", out[i:end])
+	}
+}
+
+func TestLightThemeDoesNotLeaveBlackRibbons(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := testModel(t)
+	m.theme = themeLight
+	applyTheme(themeLight)
+	m.AttachTools(t.TempDir(), "codex", []string{"claude", "grok", "codex"})
+	tm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 24})
+	out := tm.(Model).View()
+	if i := strings.Index(out, "\x1b[0m   "); i >= 0 {
+		start := i - 30
+		if start < 0 {
+			start = 0
+		}
+		end := i + 40
+		if end > len(out) {
+			end = len(out)
+		}
+		t.Fatalf("light theme left unstyled spaces after a reset (black ribbon):\n%q", out[start:end])
 	}
 }
 
