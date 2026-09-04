@@ -418,3 +418,90 @@ func TestCleanTitleNamesScheduledTasks(t *testing.T) {
 		t.Errorf("CleanTitle = %q, want %q", got, want)
 	}
 }
+
+func TestCleanTitleNamesSkillSessions(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"plain skill dir",
+			"Base directory for this skill: /Users/me/.claude/skills/prom\n\n# Prometheus Query Skill\nActivate…",
+			"skill: prom"},
+		{"plugin cache dir",
+			"Base directory for this skill: /Users/me/.claude/plugins/cache/daily-dev/daily-dev/0.4.5/skills/statusline\n\n---\nname: statusline",
+			"skill: statusline"},
+		{"manual starts on the same line",
+			"Base directory for this skill: /Users/me/.claude/skills/prom # Prometheus Query Skill",
+			"skill: prom"},
+		{"trailing separator",
+			"Base directory for this skill: /Users/me/.claude/skills/loki/\n\nbody",
+			"skill: loki"},
+		{"path with spaces",
+			"Base directory for this skill: /Users/me/Library/Application Support/Claude/agent-mode\n\nbody",
+			"skill: agent-mode"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CleanTitle(tc.in); got != tc.want {
+				t.Errorf("CleanTitle = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCleanTitleIgnoresPreambleMidPrompt(t *testing.T) {
+	// Only a prompt that *opens* with the preamble is a skill invocation.
+	in := "why does it print Base directory for this skill: /x every time?"
+	if got := CleanTitle(in); got != in {
+		t.Errorf("CleanTitle = %q, want the prompt unchanged", got)
+	}
+}
+
+func TestBestTitlePrefersTypedPromptOverSkillLabel(t *testing.T) {
+	// Regression guard for issue #3: the label must not outrank a real prompt.
+	in := []string{
+		"skill: tdd-workflow",
+		"lets build an AI devops agent that reads runbooks",
+	}
+	want := "lets build an AI devops agent that reads runbooks"
+	if got := bestTitle(in); got != want {
+		t.Errorf("bestTitle = %q, want %q", got, want)
+	}
+}
+
+func TestBestTitleUsesSkillLabelOverJunk(t *testing.T) {
+	// The real shape on disk: a skill preamble plus acks and interruptions.
+	in := []string{"skill: statusline", "yeah", "[Request interrupted by user]"}
+	if got := bestTitle(in); got != "skill: statusline" {
+		t.Errorf("bestTitle = %q, want the skill label", got)
+	}
+}
+
+func TestBestTitleSkillLabelBeatsPastedMaterial(t *testing.T) {
+	in := []string{"https://example.com/a/very/long/pasted/url/that/is/long", "skill: prom"}
+	if got := bestTitle(in); got != "skill: prom" {
+		t.Errorf("bestTitle = %q, want the skill label", got)
+	}
+}
+
+func TestBestTitleShortStructuredLabelSurvives(t *testing.T) {
+	// "skill: prom" is under minTitleLen and must not be skipped as too short.
+	if got := bestTitle([]string{"skill: prom"}); got != "skill: prom" {
+		t.Errorf("bestTitle = %q, want %q", got, "skill: prom")
+	}
+}
+
+func TestSkillName(t *testing.T) {
+	tests := map[string]string{
+		"/a/b/skills/prom":    "prom",
+		"/a/b/skills/prom/":   "prom",
+		" /a/b/loki ":         "loki",
+		"/a/b/prom # heading": "prom",
+		"":                    "",
+		"   ":                 "",
+	}
+	for in, want := range tests {
+		if got := skillName(in); got != want {
+			t.Errorf("skillName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
